@@ -72,11 +72,11 @@ void loop() {
  
   // 位置模式：速度1000RPM，加速度0（不使用加减速直接启动），脉冲数3200（16细分下发送3200个脉冲电机转一圈），相对运动
   Emm_V5_Pos_Control(1, 0, 300, 210, 15000, 1, 0);
-  delay(1500);
+  delay(1);Emm_V5_Receive_Data(rxCmd, &rxCount);
   Emm_V5_Pos_Control(1, 0, 300, 210, 25000, 1, 0);
-  delay(1500);
+  delay(1);Emm_V5_Receive_Data(rxCmd, &rxCount);
   Emm_V5_Pos_Control(1, 0, 300, 210, 35000, 1, 0);
-  delay(1500);
+  delay(1);Emm_V5_Receive_Data(rxCmd, &rxCount);
   
   // 等待返回命令，命令数据缓存在数组rxCmd上，长度为rxCount
   //Emm_V5_Receive_Data(rxCmd, &rxCount);
@@ -91,7 +91,7 @@ void loop() {
   //
   
   Emm_V5_Pos_Control(1, 0, 300, 210, 0, 1, 0);
-  delay(6000);
+  Emm_V5_Receive_Data(rxCmd, &rxCount);delay(6000);
 }
 
 /**
@@ -456,7 +456,7 @@ void Emm_V5_Receive_Data(uint8_t *rxCmd, uint8_t *rxCount)
     {
       cTime = millis();                   // 获取当前时刻的时间
 
-      if((int)(cTime - lTime) > 100)      // 100毫秒内串口没有数据进来，就判定一帧数据接收结束
+      if((int)(cTime - lTime) > 50)      // 100毫秒内串口没有数据进来，就判定一帧数据接收结束
       {
         *rxCount = i;                     // 数据长度
         
