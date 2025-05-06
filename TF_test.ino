@@ -59,11 +59,11 @@ void setup() {
   pinMode(LED_BUILTIN, OUTPUT);
 
   // 初始化串口
-  Serial.begin(115200);
+  Serial1.begin(115200);
 
   // 等待串口初始化完成
-  while (!Serial) {
-    ; // wait for serial port to connect. Needed for native USB port only
+  while (!Serial1) {
+    ; // wait for Serial1 port to connect. Needed for native USB port only
   }
 
   // 上电延时2秒等待ZDT_X42_V2闭环初始化完毕
@@ -85,17 +85,21 @@ void loop() {
   **********************************************************/ 
   ZDT_X42_V2_Traj_Position_Control(1, 1, 1000, 1000, 2000.0f, 500.0f, 1, 0);
   ZDT_X42_V2_Receive_Data(rxCmd, &rxCount);
-  // 等待返回命令，命令数据缓存在数组rxCmd上，长度为rxCount
+  ZDT_X42_V2_Traj_Position_Control(1, 1, 1000, 1000, 3000.0f, 500.0f, 1, 0);
   ZDT_X42_V2_Receive_Data(rxCmd, &rxCount);
+  ZDT_X42_V2_Traj_Position_Control(1, 1, 1000, 1000, 0.0f, 500.0f, 1, 0);
+  ZDT_X42_V2_Receive_Data(rxCmd, &rxCount);
+  // 等待返回命令，命令数据缓存在数组rxCmd上，长度为rxCount
+
 
   // 验证校验字节，验证成功则点亮LED灯，否则熄灭LED灯
-  if(rxCmd[rxCount - 1] == 0x6B) { digitalWrite(LED_BUILTIN, HIGH); } else { digitalWrite(LED_BUILTIN, LOW); }
+  //if(rxCmd[rxCount - 1] == 0x6B) { digitalWrite(LED_BUILTIN, HIGH); } else { digitalWrite(LED_BUILTIN, LOW); }
 
   // 调试使用，打印ZDT_X42_V2闭环返回的数据到串口
-  // for(int i = 0; i < rxCount; i++) { Serial.write(rxCmd[i] + 1); } // 因为和USB下载口共用串口，所以让每个数据加1再发送出来，防止和电机地址冲突
+  // for(int i = 0; i < rxCount; i++) { Serial1.write(rxCmd[i] + 1); } // 因为和USB下载口共用串口，所以让每个数据加1再发送出来，防止和电机地址冲突
 
   // 停止发送命令
-  while(1);
+  delay(6000);
 }
 
 /**
@@ -114,7 +118,7 @@ void ZDT_X42_V2_Reset_CurPos_To_Zero(uint8_t addr)
   cmd[3] =  0x6B;                       // 校验字节
   
   // 发送命令
-  Serial.write(cmd, 4);
+  Serial1.write(cmd, 4);
 }
 
 /**
@@ -133,7 +137,7 @@ void ZDT_X42_V2_Reset_Clog_Pro(uint8_t addr)
   cmd[3] =  0x6B;                       // 校验字节
   
   // 发送命令
-  Serial.write(cmd, 4);
+  Serial1.write(cmd, 4);
 }
 
 /**
@@ -178,11 +182,11 @@ void ZDT_X42_V2_Read_Sys_Params(uint8_t addr, SysParams_t s)
   // 发送命令
   if(s >= S_Conf)
   {
-    cmd[3] = 0x6B; Serial.write(cmd, 4);
+    cmd[3] = 0x6B; Serial1.write(cmd, 4);
   }
   else
   {
-    cmd[2] = 0x6B; Serial.write(cmd, 3);
+    cmd[2] = 0x6B; Serial1.write(cmd, 3);
   }
 }
 
@@ -206,7 +210,7 @@ void ZDT_X42_V2_Modify_Ctrl_Mode(uint8_t addr, bool svF, uint8_t ctrl_mode)
   cmd[5] =  0x6B;                       // 校验字节
   
   // 发送命令
-  Serial.write(cmd, 6);
+  Serial1.write(cmd, 6);
 }
 
 /**
@@ -229,7 +233,7 @@ void ZDT_X42_V2_En_Control(uint8_t addr, bool state, uint8_t snF)
   cmd[5] =  0x6B;                       // 校验字节
   
   // 发送命令
-  Serial.write(cmd, 6);
+  Serial1.write(cmd, 6);
 }
 
 /**
@@ -257,7 +261,7 @@ void ZDT_X42_V2_Torque_Control(uint8_t addr, uint8_t sign, uint16_t t_ramp, uint
   cmd[8] =  0x6B;                       // 校验字节
   
   // 发送命令
-  Serial.write(cmd, 9);
+  Serial1.write(cmd, 9);
 }
 
 /**
@@ -288,7 +292,7 @@ void ZDT_X42_V2_Velocity_Control(uint8_t addr, uint8_t dir, uint16_t v_ramp, flo
   cmd[8] =  0x6B;                       // 校验字节
   
   // 发送命令
-  Serial.write(cmd, 9);
+  Serial1.write(cmd, 9);
 }
 
 /**
@@ -323,7 +327,7 @@ void ZDT_X42_V2_Bypass_Position_LV_Control(uint8_t addr, uint8_t dir, float velo
   cmd[11] =  0x6B;                      // 校验字节
   
   // 发送命令
-  Serial.write(cmd, 12);
+  Serial1.write(cmd, 12);
 }
 
 /**
@@ -364,7 +368,7 @@ void ZDT_X42_V2_Traj_Position_Control(uint8_t addr, uint8_t dir, uint16_t acc, u
   cmd[15] =  0x6B;                      // 校验字节
   
   // 发送命令
-  Serial.write(cmd, 16);
+  Serial1.write(cmd, 16);
 }
 
 /**
@@ -385,7 +389,7 @@ void ZDT_X42_V2_Stop_Now(uint8_t addr, uint8_t snF)
   cmd[4] =  0x6B;                       // 校验字节
   
   // 发送命令
-  Serial.write(cmd, 5);
+  Serial1.write(cmd, 5);
 }
 
 /**
@@ -404,7 +408,7 @@ void ZDT_X42_V2_Synchronous_motion(uint8_t addr)
   cmd[3] =  0x6B;                       // 校验字节
   
   // 发送命令
-  Serial.write(cmd, 4);
+  Serial1.write(cmd, 4);
 }
 
 /**
@@ -425,7 +429,7 @@ void ZDT_X42_V2_Origin_Set_O(uint8_t addr, bool svF)
   cmd[4] =  0x6B;                       // 校验字节
   
   // 发送命令
-  Serial.write(cmd, 5);
+  Serial1.write(cmd, 5);
 }
 
 /**
@@ -469,7 +473,7 @@ void ZDT_X42_V2_Origin_Modify_Params(uint8_t addr, bool svF, uint8_t o_mode, uin
   cmd[19] =  0x6B;                      // 校验字节
   
   // 发送命令
-  Serial.write(cmd, 20);
+  Serial1.write(cmd, 20);
 }
 
 /**
@@ -491,7 +495,7 @@ void ZDT_X42_V2_Origin_Trigger_Return(uint8_t addr, uint8_t o_mode, bool snF)
   cmd[4] =  0x6B;                       // 校验字节
   
   // 发送命令
-  Serial.write(cmd, 5);
+  Serial1.write(cmd, 5);
 }
 
 /**
@@ -510,7 +514,7 @@ void ZDT_X42_V2_Origin_Interrupt(uint8_t addr)
   cmd[3] =  0x6B;                       // 校验字节
   
   // 发送命令
-  Serial.write(cmd, 4);
+  Serial1.write(cmd, 4);
 }
 
 /**
@@ -531,11 +535,11 @@ void ZDT_X42_V2_Receive_Data(uint8_t *rxCmd, uint8_t *rxCount)
   // 开始接收数据
   while(1)
   {
-    if(Serial.available() > 0)            // 串口有数据进来
+    if(Serial1.available() > 0)            // 串口有数据进来
     {
       if(i <= 128)                        // 防止数组溢出，该值需要小于数组的长度
       {
-        rxCmd[i++] = Serial.read();       // 接收数据
+        rxCmd[i++] = Serial1.read();       // 接收数据
 
         lTime = millis();                 // 更新上一时刻的时间
       }
@@ -544,7 +548,7 @@ void ZDT_X42_V2_Receive_Data(uint8_t *rxCmd, uint8_t *rxCount)
     {
       cTime = millis();                   // 获取当前时刻的时间
 
-      if((int)(cTime - lTime) > 100)      // 100毫秒内串口没有数据进来，就判定一帧数据接收结束
+      if((int)(cTime - lTime) > 50)      // 100毫秒内串口没有数据进来，就判定一帧数据接收结束
       {
         *rxCount = i;                     // 数据长度
         
