@@ -1,14 +1,3 @@
-/**********************************************************
-*** ZDT_X42_V2.0步进闭环控制例程
-*** 编写作者：ZHANGDATOU
-*** 技术支持：张大头闭环伺服
-*** 淘宝店铺：https://zhangdatou.taobao.com
-*** CSDN博客：http s://blog.csdn.net/zhangdatou666
-*** qq交流群：262438510
-**********************************************************/
-
-// 注意：串口和USB下载口共用串口（0,1），USB上传程序时，先拔掉串口线.
-
 #define    ABS(x)    ((x) > 0 ? (x) : -(x)) 
 
 typedef enum {
@@ -51,62 +40,240 @@ void ZDT_X42_V2_Origin_Modify_Params(uint8_t addr, bool svF, uint8_t o_mode, uin
 void ZDT_X42_V2_Origin_Trigger_Return(uint8_t addr, uint8_t o_mode, bool snF); // 发送命令触发回零
 void ZDT_X42_V2_Origin_Interrupt(uint8_t addr); // 强制中断并退出回零
 void ZDT_X42_V2_Receive_Data(uint8_t *rxCmd, uint8_t *rxCount); // 返回数据接收函数
+// ======== 测试参数 ========
+const uint8_t MOTOR_ID = 1;
+const uint16_t ACC = 300;
+const uint16_t DECL = 300;
+const float VEL = 150.0f;   // 最大速度 (RPM)
+const uint32_t POS_0 = 0;          // 0.0° → 0 (单位 0.1°)
+const uint32_t POS_4000 = 4000;   // 4000.0° → 4000 (单位 0.1°)
 
-void setup() {
-  // put your setup code here, to run once:
+class Motor {
+public:
+  // ===== 状态定义 =====
+  enum State {
+    ST1_UNSENT, ST1_SENT, ST1_ACKED, ST1_REACHED,
+    ST2_UNSENT, ST2_SENT, ST2_ACKED, ST2_REACHED,
+    ST3_UNSENT, ST3_SENT, ST3_ACKED, ST3_REACHED
+  };
 
-  // 初始化LED灯
-  pinMode(LED_BUILTIN, OUTPUT);
+  uint8_t id;               // 电机编号
+  State state;              // 当前状态
+  unsigned long lastCmdTm;  // 该电机上次命令时间（可选）
+  bool acked = false;
+  bool reached = false;
+  uint8_t rxCmd[128];
+  uint8_t rxCount;
+  
+  // 👉 所有电机共享的全局命令时间戳（节流控制）
+  static unsigned long lastGlobalCmdTm;
 
-  // 初始化串口
-  Serial1.begin(115200);
+  // ===== 构造 =====
+  Motor(uint8_t motorId) : id(motorId) {
+    state = ST1_UNSENT;
+    lastCmdTm = 0;
+  }
+  void test_run(){
+    if (checkAck(id, 5000)) {
+      Serial.println("ok");
 
-  // 等待串口初始化完成
-  while (!Serial1) {
-    ; // wait for Serial1 port to connect. Needed for native USB port only
+    }
+    else {
+      Serial.println("not ok");
+
+    }
+  }
+  // ===== 主运行函数（状态机核心） =====
+  void run(unsigned long now) {
+    switch (state) {
+      // ==================== 工位1 ====================
+      case ST1_UNSENT:
+        if (canSend(now)) {
+          sendCommand(1, now);
+          ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_4000, 1, 0);
+          state = ST1_SENT;
+        }
+        break;
+
+      case ST1_SENT:
+        if (checkAck(id,0xFD)) state = ST1_ACKED;
+        break;
+
+      case ST1_ACKED:
+        if (checkReached(id,0xFD)) state = ST1_REACHED;
+        break;
+
+      case ST1_REACHED:
+        delay(500);
+        state = ST2_UNSENT;
+        break;
+
+      // ==================== 工位2 ====================
+      case ST2_UNSENT:
+        if (canSend(now)) {
+          ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, 2000, 1, 0);
+          sendCommand(2, now);
+          state = ST2_SENT;
+        }
+        break;
+
+      case ST2_SENT:
+        if (checkAck(id,0xFD)) state = ST2_ACKED;
+        break;
+
+      case ST2_ACKED:
+        if (checkReached(id,0xFD)) state = ST2_REACHED;
+        break;
+
+      case ST2_REACHED:
+        delay(500);
+        state = ST3_UNSENT;
+        break;
+
+      // ==================== 工位3 ====================
+      case ST3_UNSENT:
+        if (canSend(now)) {
+          ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, 500, 1, 0);
+          
+          sendCommand(3, now);
+          state = ST3_SENT;
+        }
+        break;
+
+      case ST3_SENT:
+        if (checkAck(id,0xFD)) state = ST3_ACKED;
+        break;
+
+      case ST3_ACKED:
+        if (checkReached(id,0xFD)) state = ST3_REACHED;
+        break;
+
+      case ST3_REACHED:
+        delay(500);
+        state = ST1_UNSENT;   // 循环回工位1
+        break;
+    }
   }
 
-  // 上电延时2秒等待ZDT_X42_V2闭环初始化完毕
-  delay(2000);
+private:
+  // ===== 工具函数 =====
+  bool canSend(unsigned long now) {
+    // 限制：所有电机共享全局节流 ≥10ms
+    return (now - lastGlobalCmdTm) >= 10;
+  }
+
+  void sendCommand(uint8_t station, unsigned long now) {
+    lastCmdTm = now;
+    lastGlobalCmdTm = now;  // 更新全局时间戳
+    // === TODO: 替换为实际运动命令 ===
+    Serial.print("Motor ");
+    Serial.print(id);
+    Serial.print(" -> send to STATION ");
+    Serial.println(station);
+  }
+
+  bool checkAck(uint8_t id, long expectedTarget01deg) {
+  // 清空缓存
+  memset(rxCmd, 0, sizeof(rxCmd));
+  rxCount = 0;
+
+  // === 主动查询目标位置 ===
+  ZDT_X42_V2_Read_Sys_Params(id, S_TPOS); // 功能码 0x33
+  ZDT_X42_V2_Receive_Data(rxCmd, &rxCount);
+  if (rxCount < 6) return false; // 最少 Addr + Func + 数据 + CRC
+
+  // 提取返回值（假设低字节在前，小端模式）
+  long tpos = 0;
+  tpos =  ((uint32_t)rxCmd[2]) |
+        ((uint32_t)rxCmd[3] << 8) |
+        ((uint32_t)rxCmd[4] << 16) |
+        ((uint32_t)rxCmd[5] << 24);
+
+  Serial.print("Motor "); Serial.print(id);
+  Serial.print(" TargetPos: "); Serial.println(tpos);
+
+  // 允许 ±2 脉冲误差（0.2°）
+  if (abs(tpos - expectedTarget01deg) <= 2) {
+    Serial.println("✅ 命令确认：目标位置已更新");
+    return true;
+  }
+  return false;
+}
+
+  bool checkReached(uint8_t id, uint8_t expectedFunc) {
+  // 在接收前清空缓存
+  memset(rxCmd, 0, sizeof(rxCmd));
+  rxCount = 0;
+
+  ZDT_X42_V2_Receive_Data(rxCmd, &rxCount);
+  if (rxCount < 4) return false;
+
+  uint8_t addr = rxCmd[0];
+  uint8_t func = rxCmd[1];
+  uint8_t data = rxCmd[2];
+  uint8_t crc  = rxCmd[rxCount - 1];
+
+  if (crc != 0x6B) return false;
+  if (addr != id) return false;
+  if (func != expectedFunc) return false;
+
+  if (data == 0x9F) {
+    Serial.print("✅ Motor ");
+    Serial.print(id);
+    Serial.print(" reached target (Func ");
+    Serial.print(func, HEX);
+    Serial.println(")");
+    return true;
+  }
+
+  if (data == 0xE2) Serial.println("⚠ 参数错误或保护触发 (E2)");
+  if (data == 0xEE) Serial.println("❌ 命令格式错误 (EE)");
+  return false;
+}
+};
+
+// ===== 类外定义全局静态变量（必须写这一行） =====
+unsigned long Motor::lastGlobalCmdTm = 0;
+Motor motors[6] = { Motor(1), Motor(2), Motor(3), Motor(4), Motor(5), Motor(6) };
+
+void setup() {
+  uint8_t rxCmd[128]={0};
+  uint8_t rxCount=0;
+  Serial.begin(115200);
+  Serial1.begin(38400);
+  delay(5000);
+    // 执行一次就近单圈回零（o_mode=2 单圈就近回零）
+  ZDT_X42_V2_Origin_Trigger_Return(0, 0, 0);
+  //waitUntilInPosition();  // 等待回零完成
+  delay(3000);
+  ZDT_X42_V2_Traj_Position_Control(1, 0, ACC, DECL, VEL, 500, 1, 0);
+  delay(100);
+  ZDT_X42_V2_Receive_Data(rxCmd, &rxCount);
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-
-  // 定义接收数据数组、接收数据长度
-  uint8_t rxCmd[128] = {0}; uint8_t rxCount = 0;
- 
-  /**********************************************************
-  ***  梯形曲线位置模式：
-    *   加速加速度   ：1000RPM/s
-    *   减速加速度   ：1000RPM/s
-    *   最大速度      ：2000RPM
-    *   相对位置运动  ：-36000.0°
-  **********************************************************/ 
-  ZDT_X42_V2_Traj_Position_Control(1, 1, 1000, 1000, 2000.0f, 500.0f, 1, 0);
+  uint8_t rxCmd[128]={0};
+  uint8_t rxCount=0;
+  float pos = 0.0f, Motor_Cur_Pos = 0.0f;
+  ZDT_X42_V2_Read_Sys_Params(1, S_TPOS);
   ZDT_X42_V2_Receive_Data(rxCmd, &rxCount);
-  ZDT_X42_V2_Traj_Position_Control(1, 1, 1000, 1000, 3000.0f, 500.0f, 1, 0);
-  ZDT_X42_V2_Receive_Data(rxCmd, &rxCount);
-  ZDT_X42_V2_Traj_Position_Control(1, 1, 1000, 1000, 0.0f, 500.0f, 1, 0);
-  ZDT_X42_V2_Receive_Data(rxCmd, &rxCount);
-  // 等待返回命令，命令数据缓存在数组rxCmd上，长度为rxCount
+for (uint8_t i = 0; i < rxCount; i++) {
+  if (rxCmd[i] < 0x10) Serial.print("0x0");  // 补0对齐
+  else Serial.print("0x");
+  Serial.print(rxCmd[i], HEX);
+  Serial.print(" ");}
+  if(rxCmd[0] == 1 && rxCmd[1] == 0x36 && rxCount == 8){
+    Serial.println("Verify ok");
+  }
+  else if(rxCount!=8){
+    Serial.print("rxcount is : ");Serial.println(rxCount);
 
 
-  // 验证校验字节，验证成功则点亮LED灯，否则熄灭LED灯
-  //if(rxCmd[rxCount - 1] == 0x6B) { digitalWrite(LED_BUILTIN, HIGH); } else { digitalWrite(LED_BUILTIN, LOW); }
-
-  // 调试使用，打印ZDT_X42_V2闭环返回的数据到串口
-  // for(int i = 0; i < rxCount; i++) { Serial1.write(rxCmd[i] + 1); } // 因为和USB下载口共用串口，所以让每个数据加1再发送出来，防止和电机地址冲突
-
-  // 停止发送命令
-  delay(6000);
+  }
+  else if (rxCmd[1]!=0x33){
+    Serial.println("code not correct");
+  }
 }
-
-/**
-  * @brief    将当前位置清零
-  * @param    addr  ：电机地址
-  * @retval   地址 + 功能码 + 命令状态 + 校验字节
-  */
 void ZDT_X42_V2_Reset_CurPos_To_Zero(uint8_t addr)
 {
   uint8_t cmd[16] = {0};
@@ -548,7 +715,7 @@ void ZDT_X42_V2_Receive_Data(uint8_t *rxCmd, uint8_t *rxCount)
     {
       cTime = millis();                   // 获取当前时刻的时间
 
-      if((int)(cTime - lTime) > 50)      // 100毫秒内串口没有数据进来，就判定一帧数据接收结束
+      if((int)(cTime - lTime) > 10)      // 100毫秒内串口没有数据进来，就判定一帧数据接收结束
       {
         *rxCount = i;                     // 数据长度
         
