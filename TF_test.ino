@@ -96,11 +96,11 @@ public:
         break;
 
       case ST1_SENT:
-        if (checkAck(id,0xFD)) state = ST1_ACKED;
+        if (checkAck(id,POS_4000)) state = ST1_ACKED;
         break;
 
       case ST1_ACKED:
-        if (checkReached(id,0xFD)) state = ST1_REACHED;
+        if (checkReached(id,POS_4000)) state = ST1_REACHED;
         break;
 
       case ST1_REACHED:
@@ -118,11 +118,11 @@ public:
         break;
 
       case ST2_SENT:
-        if (checkAck(id,0xFD)) state = ST2_ACKED;
+        if (checkAck(id,2000)) state = ST2_ACKED;
         break;
 
       case ST2_ACKED:
-        if (checkReached(id,0xFD)) state = ST2_REACHED;
+        if (checkReached(id,2000)) state = ST2_REACHED;
         break;
 
       case ST2_REACHED:
@@ -141,11 +141,11 @@ public:
         break;
 
       case ST3_SENT:
-        if (checkAck(id,0xFD)) state = ST3_ACKED;
+        if (checkAck(id,500)) state = ST3_ACKED;
         break;
 
       case ST3_ACKED:
-        if (checkReached(id,0xFD)) state = ST3_REACHED;
+        if (checkReached(id,500)) state = ST3_REACHED;
         break;
 
       case ST3_REACHED:
@@ -173,61 +173,72 @@ private:
   }
 
   bool checkAck(uint8_t id, long expectedTarget01deg) {
-  // 清空缓存
-  memset(rxCmd, 0, sizeof(rxCmd));
+    memset(rxCmd, 0, sizeof(rxCmd));
   rxCount = 0;
 
-  // === 主动查询目标位置 ===
-  ZDT_X42_V2_Read_Sys_Params(id, S_TPOS); // 功能码 0x33
+  // 读取实时位置 (功能码 0x36)
+  ZDT_X42_V2_Read_Sys_Params(id, S_TPOS);
   ZDT_X42_V2_Receive_Data(rxCmd, &rxCount);
-  if (rxCount < 6) return false; // 最少 Addr + Func + 数据 + CRC
 
-  // 提取返回值（假设低字节在前，小端模式）
-  long tpos = 0;
-  tpos =  ((uint32_t)rxCmd[2]) |
-        ((uint32_t)rxCmd[3] << 8) |
-        ((uint32_t)rxCmd[4] << 16) |
-        ((uint32_t)rxCmd[5] << 24);
+  // 校验基本字段
+  if (rxCount != 8 || rxCmd[0] != id || rxCmd[1] != 0x33) {
+    Serial.println(" 无效返回帧");
+    return false;
+  }
+
+  // 提取符号和位置
+  bool negative = rxCmd[2];
+  uint32_t pos = ((uint32_t)rxCmd[3] << 24) |
+                 ((uint32_t)rxCmd[4] << 16) |
+                 ((uint32_t)rxCmd[5] << 8)  |
+                 (uint32_t)rxCmd[6];
+  long cpos = (long)(pos * 0.1f);
+  if (negative) cpos = -cpos;
 
   Serial.print("Motor "); Serial.print(id);
-  Serial.print(" TargetPos: "); Serial.println(tpos);
+  Serial.print(" 目标角度: "); Serial.println(cpos);
 
-  // 允许 ±2 脉冲误差（0.2°）
-  if (abs(tpos - expectedTarget01deg) <= 2) {
-    Serial.println("✅ 命令确认：目标位置已更新");
+  // 判断是否到达目标（允许±5）
+  if (abs(cpos - expectedTarget01deg / 10) <= 5) {
+    Serial.println("目标位置确认");
     return true;
   }
+
   return false;
 }
 
-  bool checkReached(uint8_t id, uint8_t expectedFunc) {
-  // 在接收前清空缓存
+  bool checkReached(uint8_t id, long expectedTarget01deg) {
   memset(rxCmd, 0, sizeof(rxCmd));
   rxCount = 0;
 
+  // 读取实时位置 (功能码 0x36)
+  ZDT_X42_V2_Read_Sys_Params(id, S_CPOS);
   ZDT_X42_V2_Receive_Data(rxCmd, &rxCount);
-  if (rxCount < 4) return false;
 
-  uint8_t addr = rxCmd[0];
-  uint8_t func = rxCmd[1];
-  uint8_t data = rxCmd[2];
-  uint8_t crc  = rxCmd[rxCount - 1];
+  // 校验基本字段
+  if (rxCount != 8 || rxCmd[0] != id || rxCmd[1] != 0x36) {
+    Serial.println(" 无效返回帧");
+    return false;
+  }
 
-  if (crc != 0x6B) return false;
-  if (addr != id) return false;
-  if (func != expectedFunc) return false;
+  // 提取符号和位置
+  bool negative = rxCmd[2];
+  uint32_t pos = ((uint32_t)rxCmd[3] << 24) |
+                 ((uint32_t)rxCmd[4] << 16) |
+                 ((uint32_t)rxCmd[5] << 8)  |
+                 (uint32_t)rxCmd[6];
+  long cpos = (long)(pos * 0.1f);
+  if (negative) cpos = -cpos;
 
-  if (data == 0x9F) {
-    Serial.print("✅ Motor ");
-    Serial.print(id);
-    Serial.print(" reached target (Func ");
-    Serial.print(func, HEX);
-    Serial.println(")");
+  Serial.print("Motor "); Serial.print(id);
+  Serial.print(" 当前角度: "); Serial.println(cpos);
+
+  // 判断是否到达目标（允许±5）
+  if (abs(cpos - expectedTarget01deg / 10) <= 5) {
+    Serial.println(" 到位确认：当前位置与目标接近");
     return true;
   }
 
-  if (data == 0xE2) Serial.println("⚠ 参数错误或保护触发 (E2)");
-  if (data == 0xEE) Serial.println("❌ 命令格式错误 (EE)");
   return false;
 }
 };
@@ -237,42 +248,24 @@ unsigned long Motor::lastGlobalCmdTm = 0;
 Motor motors[6] = { Motor(1), Motor(2), Motor(3), Motor(4), Motor(5), Motor(6) };
 
 void setup() {
-  uint8_t rxCmd[128]={0};
-  uint8_t rxCount=0;
+  delay(500);
   Serial.begin(115200);
-  Serial1.begin(38400);
+  Serial1.begin(19200);
   delay(5000);
     // 执行一次就近单圈回零（o_mode=2 单圈就近回零）
   ZDT_X42_V2_Origin_Trigger_Return(0, 0, 0);
   //waitUntilInPosition();  // 等待回零完成
   delay(3000);
   ZDT_X42_V2_Traj_Position_Control(1, 0, ACC, DECL, VEL, 500, 1, 0);
-  delay(100);
-  ZDT_X42_V2_Receive_Data(rxCmd, &rxCount);
+  delay(10);
 }
 
 void loop() {
-  uint8_t rxCmd[128]={0};
-  uint8_t rxCount=0;
-  float pos = 0.0f, Motor_Cur_Pos = 0.0f;
-  ZDT_X42_V2_Read_Sys_Params(1, S_TPOS);
-  ZDT_X42_V2_Receive_Data(rxCmd, &rxCount);
-for (uint8_t i = 0; i < rxCount; i++) {
-  if (rxCmd[i] < 0x10) Serial.print("0x0");  // 补0对齐
-  else Serial.print("0x");
-  Serial.print(rxCmd[i], HEX);
-  Serial.print(" ");}
-  if(rxCmd[0] == 1 && rxCmd[1] == 0x36 && rxCount == 8){
-    Serial.println("Verify ok");
-  }
-  else if(rxCount!=8){
-    Serial.print("rxcount is : ");Serial.println(rxCount);
+  motors[0].test_run();
 
 
-  }
-  else if (rxCmd[1]!=0x33){
-    Serial.println("code not correct");
-  }
+delay(10);
+
 }
 void ZDT_X42_V2_Reset_CurPos_To_Zero(uint8_t addr)
 {
@@ -715,7 +708,7 @@ void ZDT_X42_V2_Receive_Data(uint8_t *rxCmd, uint8_t *rxCount)
     {
       cTime = millis();                   // 获取当前时刻的时间
 
-      if((int)(cTime - lTime) > 10)      // 100毫秒内串口没有数据进来，就判定一帧数据接收结束
+      if((int)(cTime - lTime) > 20)      // 100毫秒内串口没有数据进来，就判定一帧数据接收结束
       {
         *rxCount = i;                     // 数据长度
         
