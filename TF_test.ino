@@ -45,14 +45,14 @@ void ZDT_X42_V2_Receive_Data(uint8_t *rxCmd, uint8_t *rxCount);                 
 const uint8_t MOTOR_ID = 1;
 const uint16_t ACC = 300;
 const uint16_t DECL = 300;
-const float VEL = 150.0f;        // 最大速度 (RPM)
-const uint32_t POS_0 = 0;        // 0.0° → 0 (单位 0.1°)
-const uint32_t POS_500 = 500;  
+const float VEL = 150.0f;  // 最大速度 (RPM)
+const uint32_t POS_0 = 0;  // 0.0° → 0 (单位 0.1°)
+const uint32_t POS_500 = 500;
 const uint32_t POS_4000 = 4000;  // 4000.0° → 4000 (单位 0.1°)
 const uint32_t POS_HOMING = 78;
 const uint32_t POS_HOMING_END = 6800;
 const uint32_t POS_END = 6600;
-const uint32_t POS_MID = 3000; 
+const uint32_t POS_MID = 3000;
 
 class Motor {
 public:
@@ -72,14 +72,14 @@ public:
     ST3_REACHED
   };
   enum HomingStatus {
-  HOMING_IN_PROGRESS,
-  HOMING_FAILED,
-  HOMING_SUCCESS,
-  HOMING_INVALID
-};
+    HOMING_IN_PROGRESS,
+    HOMING_FAILED,
+    HOMING_SUCCESS,
+    HOMING_INVALID
+  };
 
 
-  uint8_t id;               // 电机编号
+  uint8_t id;  // 电机编号
   int btnPin;
   State state;              // 当前状态
   unsigned long lastCmdTm;  // 该电机上次命令时间（可选）
@@ -90,15 +90,18 @@ public:
 
   // 👉 所有电机共享的全局命令时间戳（节流控制）
   static unsigned long lastGlobalCmdTm;
+  static uint8_t plate;
+  
 
   // ===== 构造 =====
   Motor(uint8_t motorId)
     : id(motorId) {
     state = ST1_UNSENT;
     lastCmdTm = 0;
-    btnPin=id+1;
+    btnPin = id + 1;
+    
   }
-  
+
   void test_run() {
     if (checkAck(id, 5000)) {
       Serial.println("ok");
@@ -107,63 +110,74 @@ public:
       Serial.println("not ok");
     }
   }
-  static HomingStatus checkHomingStatus(uint8_t id) {
-  uint8_t rxCmd[16] = {0};  // ✅ 局部数组，而不是成员变量
-  uint8_t rxCount   = 0;
-  memset(rxCmd, 0, sizeof(rxCmd));
-  rxCount = 0;
+  HomingStatus checkHomingStatus() {
+    
+    memset(rxCmd, 0, sizeof(rxCmd));
+    rxCount = 0;
+    // 1️⃣ 发送读取回零状态标志命令
+    ZDT_X42_V2_Read_Sys_Params(id, S_OFLAG);  // 功能码 0x3B
+    ZDT_X42_V2_Receive_Data(rxCmd, &rxCount);
+    // 2️⃣ 基本校验
+    if (rxCount != 4 || rxCmd[0] != id || rxCmd[1] != 0x3B || rxCmd[rxCount - 1] != 0x6B) {
+      Serial.println("无效的回零状态返回帧");
+      return HOMING_INVALID;
+    }
+    // 3️⃣ 提取状态标志位（第3个字节）
+    uint8_t flag = rxCmd[2];
+    // 可选调试打印
+    Serial.print("Motor ");
+    Serial.print(id);
+    Serial.print(" Homing Flag = 0x");
+    Serial.println(flag, HEX);
 
-  // 1️⃣ 发送读取回零状态标志命令
-  ZDT_X42_V2_Read_Sys_Params(id, S_OFLAG);   // 功能码 0x3B
-  ZDT_X42_V2_Receive_Data(rxCmd, &rxCount);
+    // 4️⃣ 判断各标志
+    bool Enc_Rdy = flag & 0x01;
+    bool Cal_Rdy = flag & 0x02;
+    bool Org_SF = flag & 0x04;
+    bool Org_CF = flag & 0x08;
+    bool Otp_TF = flag & 0x10;
+    bool Ocp_TF = flag & 0x20;
 
-  // 2️⃣ 基本校验
-  if (rxCount != 4 || rxCmd[0] != id || rxCmd[1] != 0x3B || rxCmd[rxCount - 1] != 0x6B) {
-    Serial.println("无效的回零状态返回帧");
-    return HOMING_INVALID;
+    Serial.print("  Enc_Rdy=");
+    Serial.print(Enc_Rdy);
+    Serial.print(" Cal_Rdy=");
+    Serial.print(Cal_Rdy);
+    Serial.print(" Org_SF=");
+    Serial.print(Org_SF);
+    Serial.print(" Org_CF=");
+    Serial.print(Org_CF);
+    Serial.print(" Otp_TF=");
+    Serial.print(Otp_TF);
+    Serial.print(" Ocp_TF=");
+    Serial.println(Ocp_TF);
+
+    // 5️⃣ 回零状态判断
+    uint8_t org_state = flag & 0x0C;
+    if (org_state == 0x04) {
+      Serial.println("正在回零...");
+      return HOMING_IN_PROGRESS;
+    } else if (org_state == 0x08) {
+      Serial.println("回零失败！");
+      return HOMING_FAILED;
+    } else if (org_state == 0x00) {
+      Serial.println("回零成功！");
+      return HOMING_SUCCESS;
+    } else {
+      Serial.println("未知状态");
+      return HOMING_INVALID;
+    }
   }
-
-  // 3️⃣ 提取状态标志位（第3个字节）
-  uint8_t flag = rxCmd[2];
-
-  // 可选调试打印
-  Serial.print("Motor "); Serial.print(id);
-  Serial.print(" Homing Flag = 0x");
-  Serial.println(flag, HEX);
-
-  // 4️⃣ 判断各标志
-  bool Enc_Rdy = flag & 0x01;
-  bool Cal_Rdy = flag & 0x02;
-  bool Org_SF  = flag & 0x04;
-  bool Org_CF  = flag & 0x08;
-  bool Otp_TF  = flag & 0x10;
-  bool Ocp_TF  = flag & 0x20;
-
-  Serial.print("  Enc_Rdy="); Serial.print(Enc_Rdy);
-  Serial.print(" Cal_Rdy="); Serial.print(Cal_Rdy);
-  Serial.print(" Org_SF="); Serial.print(Org_SF);
-  Serial.print(" Org_CF="); Serial.print(Org_CF);
-  Serial.print(" Otp_TF="); Serial.print(Otp_TF);
-  Serial.print(" Ocp_TF="); Serial.println(Ocp_TF);
-
-  // 5️⃣ 回零状态判断
-  uint8_t org_state = flag & 0x0C;
-  if (org_state == 0x04) {
-    Serial.println("正在回零...");
-    return HOMING_IN_PROGRESS;
-  } else if (org_state == 0x08) {
-    Serial.println("回零失败！");
-    return HOMING_FAILED;
-  } else if (org_state == 0x00) {
-    Serial.println("回零成功！");
-    return HOMING_SUCCESS;
-  } else {
-    Serial.println("未知状态");
-    return HOMING_INVALID;
+  bool checkAvailable(){
+    if (state==ST2_REACHED){
+      return true;
+    }
+    else{
+      return false;
+    }
   }
-}
   // ===== 主运行函数（状态机核心） =====
   void run(unsigned long now) {
+    
     switch (state) {
       // ==================== 工位1 ====================
       case ST1_UNSENT:
@@ -171,22 +185,28 @@ public:
           sendCommand(1, now);
           ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_END, 1, 0);
           state = ST1_SENT;
+          
         }
         break;
 
       case ST1_SENT:
-        if (checkAck(id, POS_END)) {state = ST1_ACKED;}
-        else {state=ST2_UNSENT;}
+        if (checkAck(id, POS_END)) {
+          state = ST1_ACKED;
+        } else {
+          state = ST2_UNSENT;
+        }
+        
         break;
 
       case ST1_ACKED:
         if (checkReached(id, POS_END)) state = ST1_REACHED;
+        
         break;
 
       case ST1_REACHED:
         //delay(50);
-        if(digitalRead(btnPin)==LOW){state = ST2_UNSENT;}
-        
+        if (digitalRead(btnPin) == LOW) { state = ST2_UNSENT; }
+
         break;
 
       // ==================== 工位2 ====================
@@ -195,47 +215,65 @@ public:
           ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_MID, 1, 0);
           sendCommand(2, now);
           state = ST2_SENT;
+          
         }
         break;
 
       case ST2_SENT:
-        if (checkAck(id, POS_MID)) {state = ST2_ACKED;}
-        else {state=ST2_UNSENT;}
+        if (checkAck(id, POS_MID)) {
+          state = ST2_ACKED;
+        } else {
+          state = ST2_UNSENT;
+        }
+        
         break;
 
       case ST2_ACKED:
         if (checkReached(id, POS_MID)) state = ST2_REACHED;
+        
         break;
 
       case ST2_REACHED:
         //delay(50);
-        state = ST3_UNSENT;
+        if (id==plate){
+          state=ST3_UNSENT;
+        }
+        else if(digitalRead(btnPin) == LOW) { state = ST1_UNSENT; }
+        
         break;
 
       // ==================== 工位3 ====================
       case ST3_UNSENT:
         if (canSend(now)) {
-          ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_HOMING, 1, 0);
+          ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_500, 1, 0);
 
           sendCommand(3, now);
           state = ST3_SENT;
         }
+        
         break;
 
       case ST3_SENT:
-        if (checkAck(id, POS_HOMING)) {state = ST3_ACKED;}
-        else {state=ST2_UNSENT;}
+        if (checkAck(id, POS_500)) {
+          state = ST3_ACKED;
+        } else {
+          state = ST2_UNSENT;
+        }
+        
         break;
 
       case ST3_ACKED:
-        if (checkReached(id, POS_HOMING)) state = ST3_REACHED;
+        if (checkReached(id, POS_500)) state = ST3_REACHED;
+        
         break;
 
       case ST3_REACHED:
         //delay(50);
-        if(digitalRead(btnPin)==LOW){state = ST1_UNSENT;}  // 循环回工位1
+        if (digitalRead(btnPin) == LOW) { state = ST1_UNSENT; }  // 循环回工位1
+        
         break;
     }
+    lastGlobalCmdTm = now;
   }
 
 private:
@@ -322,32 +360,41 @@ private:
 
     return false;
   }
-  
 };
 
 // ===== 类外定义全局静态变量（必须写这一行） =====
 unsigned long Motor::lastGlobalCmdTm = 0;
-Motor motors[8] = { Motor(1), Motor(2), Motor(3), Motor(4), Motor(5), Motor(6),Motor(7),Motor(8) };
+uint8_t Motor::plate = 0;
+Motor motors[8] = { Motor(1), Motor(2), Motor(3), Motor(4), Motor(5), Motor(6), Motor(7), Motor(8) };
 
 void setup() {
-  int sen_1,sen_2,sen_3,sen_4,btn_1,btn_2,btn_3,btn_4,btn_5,btn_6;
-  btn_1=2;btn_2=3;btn_3=4;btn_4=5;btn_5=6;btn_6=7;sen_1=8;sen_2=9;sen_3=10;sen_4=11;
+  int sen_1, sen_2, sen_3, sen_4, btn_1, btn_2, btn_3, btn_4, btn_5, btn_6;
+  btn_1 = 2;
+  btn_2 = 3;
+  btn_3 = 4;
+  btn_4 = 5;
+  btn_5 = 6;
+  btn_6 = 7;
+  sen_1 = 8;
+  sen_2 = 9;
+  sen_3 = 10;
+  sen_4 = 11;
 
 
   delay(500);
   Serial.begin(115200);
   Serial1.begin(19200);
   delay(5000);
-  pinMode(sen_1,INPUT_PULLUP);
-  pinMode(sen_2,INPUT_PULLUP);
-  pinMode(sen_3,INPUT_PULLUP);
-  pinMode(sen_4,INPUT_PULLUP);
-  pinMode(btn_1,INPUT_PULLUP);
-  pinMode(btn_2,INPUT_PULLUP);
-  pinMode(btn_3,INPUT_PULLUP);
-  pinMode(btn_4,INPUT_PULLUP);
-  pinMode(btn_5,INPUT_PULLUP);
-  pinMode(btn_6,INPUT_PULLUP);
+  pinMode(sen_1, INPUT_PULLUP);
+  pinMode(sen_2, INPUT_PULLUP);
+  pinMode(sen_3, INPUT_PULLUP);
+  pinMode(sen_4, INPUT_PULLUP);
+  pinMode(btn_1, INPUT_PULLUP);
+  pinMode(btn_2, INPUT_PULLUP);
+  pinMode(btn_3, INPUT_PULLUP);
+  pinMode(btn_4, INPUT_PULLUP);
+  pinMode(btn_5, INPUT_PULLUP);
+  pinMode(btn_6, INPUT_PULLUP);
   // 执行一次就近单圈回零（o_mode=2 单圈就近回零）
   //ZDT_X42_V2_Origin_Trigger_Return(0, 0, 0);
   //waitUntilInPosition();  // 等待回零完成
@@ -358,21 +405,21 @@ void setup() {
 }
 
 void loop() {
-unsigned long now = millis();
-  for (int i=0; i<6; i++) {
+  updatePlateLogic();
+  unsigned long now = millis();
+  for (int i = 0; i < 6; i++) {
     now = millis();
     motors[i].run(now);
-    delay(10);// 轮询节拍
+    delay(10);  // 轮询节拍
   }
 }
-void homing(){
+void homing() {
   Motor::HomingStatus status;
   for (uint8_t id = 1; id <= 8; ++id) {
-    Motor::HomingStatus status;
-
+    
     // 轮询直到回零结束（不再是“正在回零”）
     do {
-      status = Motor::checkHomingStatus(id);
+      status = motors[id - 1].checkHomingStatus();
       delay(50);  // 稍微等一下，避免总线太频繁
     } while (status == Motor::HomingStatus::HOMING_IN_PROGRESS);
 
@@ -380,63 +427,111 @@ void homing(){
     if (status != Motor::HomingStatus::HOMING_SUCCESS) {
       Serial.print("Homing failed on motor ");
       Serial.println(id);
-      return;
+      while (1) {}
     }
   }
 
   ZDT_X42_V2_Origin_Trigger_Return(0, 0, 0);
-  delay(3000);
-  int trigger,sen_1,sen_2;
-  sen_1=8;
-  sen_2=9;
+  delay(2000);
+  int trigger, sen_1, sen_2;
+  sen_1 = 8;
+  sen_2 = 9;
   for (uint8_t id = 1; id <= 8; ++id) {
     ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_500, 1, 0);
     delay(200);
   }
   delay(3000);
-  for (uint8_t id = 1; id <= 8; ++id) {
-    trigger=digitalRead(sen_1);
-    if (trigger==LOW){
-      Serial.print("Motor:");Serial.print(id);Serial.println("start to trigger sen_1");
+  for (uint8_t id = 1; id <= 6; ++id) {
+    trigger = digitalRead(sen_1);
+    if (trigger == LOW) {
+      Serial.print("Motor:");
+      Serial.print(id);
+      Serial.println("start to trigger sen_1");
       ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_HOMING, 1, 0);
-    delay(2000);
-  }
-  else {
-    Serial.print("Motor:");Serial.print("id");Serial.println("triggered sen_1 before move");
-    while(1){}
-  }
-  trigger=digitalRead(sen_1);
-    if (digitalRead(sen_1)==HIGH){
-      Serial.print("Motor:");Serial.print("id");Serial.println("trigger sen_1 OK.");
+      delay(2000);
+    } else {
+      Serial.print("Motor:");
+      Serial.print("id");
+      Serial.println("triggered sen_1 before move");
+      while (1) {}
+    }
+    trigger = digitalRead(sen_1);
+    if (digitalRead(sen_1) == HIGH) {
+      Serial.print("Motor:");
+      Serial.print("id");
+      Serial.println("trigger sen_1 OK.");
       ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_500, 1, 0);
       delay(2000);
+    } else {
+      Serial.print("Motor:");
+      Serial.print("id");
+      Serial.println("Does not trigger sen_1");
+      while (1) {}
     }
-    else{
-      Serial.print("Motor:");Serial.print("id");Serial.println("Does not trigger sen_1");
-    while(1){}
-    }
-    trigger=digitalRead(sen_1);
-    if (trigger==LOW){
-      Serial.print("Motor:");Serial.print(id);Serial.println("Recovered from sen_1,start to trigger sen_2");
+    trigger = digitalRead(sen_1);
+    if (trigger == LOW) {
+      Serial.print("Motor:");
+      Serial.print(id);
+      Serial.println("Recovered from sen_1,start to trigger sen_2");
       ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_HOMING_END, 1, 0);
-      delay(15000);
-  }
-  else {
-    Serial.print("Motor:");Serial.print("id");Serial.println("Does not recover from sen_1");
-    while(1){}
-  }
-  if (digitalRead(sen_2)==HIGH){
-      Serial.print("Motor:");Serial.print("id");Serial.println("trigger sen_2 OK.");
+      delay(10000);
+    } else {
+      Serial.print("Motor:");
+      Serial.print("id");
+      Serial.println("Does not recover from sen_1");
+      while (1) {}
+    }
+    if (digitalRead(sen_2) == HIGH) {
+      Serial.print("Motor:");
+      Serial.print("id");
+      Serial.println("trigger sen_2 OK.");
       ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_END, 1, 0);
       delay(2000);
-    }
-    else{
-      Serial.print("Motor:");Serial.print("id");Serial.println("Does not trigger sen_2");
-    while(1){}
+    } else {
+      Serial.print("Motor:");
+      Serial.print("id");
+      Serial.println("Does not trigger sen_2");
+      while (1) {}
     }
   }
+}
+bool anyMotorInStation3() {
+  for (int i = 0; i < 6; ++i) {
+    if (motors[i].state == Motor::ST3_UNSENT ||
+        motors[i].state == Motor::ST3_SENT   ||
+        motors[i].state == Motor::ST3_ACKED  ||
+        motors[i].state == Motor::ST3_REACHED) {
+      return true;
+    }
+  }
+  return false;
+}
 
-  
+bool motorIsReadyForPlate(uint8_t id) {
+  Motor &m = motors[id - 1];
+  // 定义哪些状态认为“有资格成为新的 plate”
+  return (m.state == Motor::ST2_REACHED);  // 例如：在工位2等待中
+}
+void updatePlateLogic() {
+  // 如果已有电机进入工位3流程，不允许切换 plate
+  if (anyMotorInStation3()) return;
+
+  uint8_t start = Motor::plate;                 // 当前 plate
+  uint8_t id = start % 6 + 1;                   // 下一个电机（1~8 循环）
+
+  for (int i = 0; i < 6; i++) {                 // 最多查 8 次
+    if (motorIsReadyForPlate(id)) {             // 如果这台电机已准备好
+      Motor::plate = id;
+      Serial.print("Plate switched to motor ");
+      Serial.println(id);
+      return;
+    }
+
+    // 下一个 id（循环 1~8）
+    id = id % 6 + 1;
+  }
+
+  // 一圈都没找到 → 保持原样
 }
 void ZDT_X42_V2_Reset_CurPos_To_Zero(uint8_t addr) {
   uint8_t cmd[16] = { 0 };
