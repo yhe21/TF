@@ -47,9 +47,12 @@ const uint16_t ACC = 300;
 const uint16_t DECL = 300;
 const float VEL = 150.0f;        // 最大速度 (RPM)
 const uint32_t POS_0 = 0;        // 0.0° → 0 (单位 0.1°)
+const uint32_t POS_500 = 500;  
 const uint32_t POS_4000 = 4000;  // 4000.0° → 4000 (单位 0.1°)
-const uint32_t POS_HOMING = 100;
-const uint32_t POS_END = 4000;
+const uint32_t POS_HOMING = 78;
+const uint32_t POS_HOMING_END = 6800;
+const uint32_t POS_END = 6600;
+const uint32_t POS_MID = 3000; 
 
 class Motor {
 public:
@@ -166,21 +169,22 @@ public:
       case ST1_UNSENT:
         if (canSend(now)) {
           sendCommand(1, now);
-          ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_4000, 1, 0);
+          ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_END, 1, 0);
           state = ST1_SENT;
         }
         break;
 
       case ST1_SENT:
-        if (checkAck(id, POS_4000)) state = ST1_ACKED;
+        if (checkAck(id, POS_END)) {state = ST1_ACKED;}
+        else {state=ST2_UNSENT;}
         break;
 
       case ST1_ACKED:
-        if (checkReached(id, POS_4000)) state = ST1_REACHED;
+        if (checkReached(id, POS_END)) state = ST1_REACHED;
         break;
 
       case ST1_REACHED:
-        delay(50);
+        //delay(50);
         if(digitalRead(btnPin)==LOW){state = ST2_UNSENT;}
         
         break;
@@ -188,29 +192,30 @@ public:
       // ==================== 工位2 ====================
       case ST2_UNSENT:
         if (canSend(now)) {
-          ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, 2000, 1, 0);
+          ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_MID, 1, 0);
           sendCommand(2, now);
           state = ST2_SENT;
         }
         break;
 
       case ST2_SENT:
-        if (checkAck(id, 2000)) state = ST2_ACKED;
+        if (checkAck(id, POS_MID)) {state = ST2_ACKED;}
+        else {state=ST2_UNSENT;}
         break;
 
       case ST2_ACKED:
-        if (checkReached(id, 2000)) state = ST2_REACHED;
+        if (checkReached(id, POS_MID)) state = ST2_REACHED;
         break;
 
       case ST2_REACHED:
-        delay(50);
+        //delay(50);
         state = ST3_UNSENT;
         break;
 
       // ==================== 工位3 ====================
       case ST3_UNSENT:
         if (canSend(now)) {
-          ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, 500, 1, 0);
+          ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_HOMING, 1, 0);
 
           sendCommand(3, now);
           state = ST3_SENT;
@@ -218,16 +223,17 @@ public:
         break;
 
       case ST3_SENT:
-        if (checkAck(id, 500)) state = ST3_ACKED;
+        if (checkAck(id, POS_HOMING)) {state = ST3_ACKED;}
+        else {state=ST2_UNSENT;}
         break;
 
       case ST3_ACKED:
-        if (checkReached(id, 500)) state = ST3_REACHED;
+        if (checkReached(id, POS_HOMING)) state = ST3_REACHED;
         break;
 
       case ST3_REACHED:
-        delay(50);
-        state = ST1_UNSENT;  // 循环回工位1
+        //delay(50);
+        if(digitalRead(btnPin)==LOW){state = ST1_UNSENT;}  // 循环回工位1
         break;
     }
   }
@@ -325,7 +331,7 @@ Motor motors[8] = { Motor(1), Motor(2), Motor(3), Motor(4), Motor(5), Motor(6),M
 
 void setup() {
   int sen_1,sen_2,sen_3,sen_4,btn_1,btn_2,btn_3,btn_4,btn_5,btn_6;
-  btn_1=2;btn_2=3;btn_3=4;btn_4=5;btn_5=6;btn_6=7;sen_1=8;sen_2=8;sen_3=8;sen_4=8;
+  btn_1=2;btn_2=3;btn_3=4;btn_4=5;btn_5=6;btn_6=7;sen_1=8;sen_2=9;sen_3=10;sen_4=11;
 
 
   delay(500);
@@ -343,10 +349,11 @@ void setup() {
   pinMode(btn_5,INPUT_PULLUP);
   pinMode(btn_6,INPUT_PULLUP);
   // 执行一次就近单圈回零（o_mode=2 单圈就近回零）
-  ZDT_X42_V2_Origin_Trigger_Return(0, 0, 0);
+  //ZDT_X42_V2_Origin_Trigger_Return(0, 0, 0);
   //waitUntilInPosition();  // 等待回零完成
-  delay(3000);
-  ZDT_X42_V2_Traj_Position_Control(1, 0, ACC, DECL, VEL, 500, 1, 0);
+  //delay(3000);
+  //ZDT_X42_V2_Traj_Position_Control(1, 0, ACC, DECL, VEL, 500, 1, 0);
+  homing();
   delay(10);
 }
 
@@ -355,7 +362,7 @@ unsigned long now = millis();
   for (int i=0; i<6; i++) {
     now = millis();
     motors[i].run(now);
-    delay(3);// 轮询节拍
+    delay(10);// 轮询节拍
   }
 }
 void homing(){
@@ -380,10 +387,10 @@ void homing(){
   ZDT_X42_V2_Origin_Trigger_Return(0, 0, 0);
   delay(3000);
   int trigger,sen_1,sen_2;
-  sen_1=1;
-  sen_2=2;
+  sen_1=8;
+  sen_2=9;
   for (uint8_t id = 1; id <= 8; ++id) {
-    ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, 500, 1, 0);
+    ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_500, 1, 0);
     delay(200);
   }
   delay(3000);
@@ -395,13 +402,13 @@ void homing(){
     delay(2000);
   }
   else {
-    Serial.print("Motor:");Serial.print("id");Serial.println("trigger sen_1 before move");
+    Serial.print("Motor:");Serial.print("id");Serial.println("triggered sen_1 before move");
     while(1){}
   }
   trigger=digitalRead(sen_1);
     if (digitalRead(sen_1)==HIGH){
       Serial.print("Motor:");Serial.print("id");Serial.println("trigger sen_1 OK.");
-      ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, 500, 1, 0);
+      ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_500, 1, 0);
       delay(2000);
     }
     else{
@@ -410,13 +417,23 @@ void homing(){
     }
     trigger=digitalRead(sen_1);
     if (trigger==LOW){
-      Serial.print("Motor:");Serial.print(id);Serial.println("Recovered from sen_1");
-
+      Serial.print("Motor:");Serial.print(id);Serial.println("Recovered from sen_1,start to trigger sen_2");
+      ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_HOMING_END, 1, 0);
+      delay(15000);
   }
   else {
     Serial.print("Motor:");Serial.print("id");Serial.println("Does not recover from sen_1");
     while(1){}
   }
+  if (digitalRead(sen_2)==HIGH){
+      Serial.print("Motor:");Serial.print("id");Serial.println("trigger sen_2 OK.");
+      ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_END, 1, 0);
+      delay(2000);
+    }
+    else{
+      Serial.print("Motor:");Serial.print("id");Serial.println("Does not trigger sen_2");
+    while(1){}
+    }
   }
 
   
