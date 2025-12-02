@@ -356,6 +356,71 @@ public:
     lastGlobalCmdTm = now;
     
   }
+  void run2(unsigned long now) {
+    uint32_t pos_end=3000;
+    uint32_t pos_first=300;
+    switch (state) {
+      // ==================== 工位1 ====================
+      case ST1_UNSENT:
+        if (canSend(now)) {
+          sendCommand(1, now);
+          ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, pos_end, 1, 0);
+          state = ST1_SENT;
+        }
+        break;
+
+      case ST1_SENT:
+        if (checkAck(id, pos_end)) {
+          state = ST1_ACKED;
+        } else {
+          state = ST2_UNSENT;
+        }
+
+        break;
+
+      case ST1_ACKED:
+        if (checkReached(id, pos_end)) state = ST1_REACHED;
+
+        break;
+
+      case ST1_REACHED:
+        //delay(50);
+        if (digitalRead(btnPin) == LOW) { state = ST2_UNSENT; }
+
+        break;
+
+      // ==================== 工位2 ====================
+      case ST2_UNSENT:
+        if (canSend(now)) {
+          ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, pos_first, 1, 0);
+          sendCommand(2, now);
+          state = ST2_SENT;
+        }
+        break;
+
+      case ST2_SENT:
+        if (checkAck(id, pos_first)) {
+          state = ST2_ACKED;
+        } else {
+          state = ST2_UNSENT;
+        }
+        break;
+
+      case ST2_ACKED:
+        if (checkReached(id, pos_first)) state = ST2_REACHED;
+
+        break;
+
+      case ST2_REACHED:
+        //delay(50);
+        if (digitalRead(btnPin) == LOW) {
+          state = ST1_UNSENT;
+        }
+        break;
+    }
+    lastGlobalCmdTm = now;
+    
+  }
 
 private:
   uint32_t st3Target = POS_FIRST;
@@ -503,6 +568,12 @@ void loop() {
     motors[i].run(now);
     delay(10);  // 轮询节拍
   }
+  for (int i = 6; i < 8; i++) {
+    now = millis();
+    motors[i].run2(now);
+    delay(10);  // 轮询节拍
+  }
+
 }
 void homing() {
   Motor::HomingStatus status;
@@ -541,9 +612,10 @@ void homing() {
 
   ZDT_X42_V2_Origin_Trigger_Return(0, 0, 0);
   delay(2000);
-  int trigger, sen_1, sen_2;
-  sen_1 = 8;
-  sen_2 = 9;
+  int trigger, sen_1, sen_2,sen_3;
+  sen_1 = SEN_1;
+  sen_2 = SEN_2;
+  sen_3= SEN_3;
   for (uint8_t id = 1; id <= 8; ++id) {
     ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_FIRST, 1, 0);
     delay(200);
@@ -602,6 +674,51 @@ void homing() {
       while (1) {}
     }
   }
+  //trigger sen_3 for motor 7 and 8
+  delay(2000);
+  for (uint8_t id = 7; id <= 8; ++id) {
+    
+  trigger = digitalRead(sen_3);
+    if (trigger == LOW) {
+      Serial.print("Motor:");
+      Serial.print(id);
+      Serial.println("start to trigger sen_3");
+      ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_HOMING, 1, 0);
+      delay(3000);
+    } else {
+      Serial.print("Motor:");
+      Serial.print("id");
+      Serial.println("triggered sen_3 before move");
+      while (1) {}
+    }
+    trigger = digitalRead(sen_3);
+    if (digitalRead(sen_3) == HIGH) {
+      Serial.print("Motor:");
+      Serial.print("id");
+      Serial.println("trigger sen_3 OK.");
+      ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_FIRST, 1, 0);
+      delay(3000);
+    } else {
+      Serial.print("Motor:");
+      Serial.print("id");
+      Serial.println("Does not trigger sen_1");
+      while (1) {}
+    }
+    trigger = digitalRead(sen_3);
+    if (trigger == LOW) {
+      Serial.print("Motor:");
+      Serial.print(id);
+      Serial.println("Recovered from sen_3");
+
+      delay(1000);
+    } else {
+      Serial.print("Motor:");
+      Serial.print("id");
+      Serial.println("Does not recover from sen_1");
+      while (1) {}
+    }
+  }
+
 }
 bool anyMotorInStation3() {
   for (int i = 0; i < 6; ++i) {
