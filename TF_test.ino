@@ -82,7 +82,8 @@ constexpr int OUT_PLATE_1 = 24;  // plate bit1
 constexpr int OUT_PLATE_2 = 25;  // plate bit2
 constexpr int OUT_SECOND = 26;   // second place 输出
 constexpr int OUT_EJECT = 27;    // ejecting 输出
-
+constexpr int OUT_TRAY_1 = 35;
+constexpr int OUT_TRAY_2 = 36;
 // 也可以用数组管理 plate bit 输出
 constexpr int PLATE_OUT_PINS[3] = { OUT_PLATE_0, OUT_PLATE_1, OUT_PLATE_2 };
 
@@ -92,7 +93,8 @@ constexpr int IN_PLATE_ECHO_1 = 29;  // plate echo bit1
 constexpr int IN_PLATE_ECHO_2 = 30;  // plate echo bit2
 constexpr int IN_SECOND_REQ = 31;    // second place 请求
 constexpr int IN_EJECT_REQ = 32;     // eject 请求
-
+constexpr int IN_TRAY_1_EJECT_REQ = 33;//nameplate tray eject 
+constexpr int IN_TRAY_2_EJECT_REQ = 34;
 // plate echo 输入数组
 constexpr int PLATE_ECHO_PINS[3] = { IN_PLATE_ECHO_0, IN_PLATE_ECHO_1, IN_PLATE_ECHO_2 };
 
@@ -210,7 +212,15 @@ public:
   }
   bool isSecondPlaceRequested() {
     // 假设低电平表示“请求 second place”
-    return digitalRead(IN_SECOND_REQ) == LOW;
+    if(digitalRead(IN_SECOND_REQ) == LOW){
+      digitalWrite(OUT_SECOND,HIGH);
+      return true;
+    }
+    else{
+      digitalWrite(OUT_SECOND,LOW);
+      return false;
+    }
+    
   }
   bool checkAvailable() {
     if (state == ST2_REACHED) {
@@ -357,7 +367,7 @@ public:
     
   }
   void run2(unsigned long now) {
-    uint32_t pos_end=3000;
+    uint32_t pos_end=3300;
     uint32_t pos_first=300;
     switch (state) {
       // ==================== 工位1 ====================
@@ -413,10 +423,28 @@ public:
 
       case ST2_REACHED:
         //delay(50);
-        if (digitalRead(btnPin) == LOW) {
+        
+        if (digitalRead(btnPin) == LOW) //triggered
+        {
           state = ST1_UNSENT;
+          if(id==7){digitalWrite(OUT_TRAY_1,LOW);break;}
+          else{digitalWrite(OUT_TRAY_2,LOW);break;}
         }
-        break;
+        else if (digitalRead(IN_TRAY_1_EJECT_REQ)==LOW && id==7){
+          state = ST1_UNSENT;
+          digitalWrite(OUT_TRAY_1,LOW);
+          while(digitalRead(IN_TRAY_1_EJECT_REQ)==LOW){delay(1);}
+          break;
+        }
+        else if (digitalRead(IN_TRAY_2_EJECT_REQ)==LOW && id==8){
+          state = ST1_UNSENT;
+          digitalWrite(OUT_TRAY_2,LOW);
+          while(digitalRead(IN_TRAY_2_EJECT_REQ)==LOW){delay(1);}
+          break;
+        }
+        if(id==7){digitalWrite(OUT_TRAY_1,HIGH);break;}
+        else{digitalWrite(OUT_TRAY_2,HIGH);break;}
+        
     }
     lastGlobalCmdTm = now;
     
@@ -522,6 +550,13 @@ void setup() {
   Serial.begin(115200);
   Serial1.begin(19200);
   delay(5000);
+  //   ===== INPUT PINS =====
+  pinMode(IN_PLATE_ECHO_0, INPUT_PULLUP);
+  pinMode(IN_PLATE_ECHO_1, INPUT_PULLUP);
+  pinMode(IN_PLATE_ECHO_2, INPUT_PULLUP);
+  pinMode(IN_SECOND_REQ, INPUT_PULLUP);
+  pinMode(IN_EJECT_REQ, INPUT_PULLUP);
+
   // ===== OUTPUT PINS =====
   pinMode(OUT_OK, OUTPUT);
   pinMode(OUT_PLATE_0, OUTPUT);
@@ -552,6 +587,7 @@ void setup() {
   pinMode(BTN_7, INPUT_PULLUP);
   pinMode(BTN_8, INPUT_PULLUP);
   // 执行一次就近单圈回零（o_mode=2 单圈就近回零）
+  //
   //ZDT_X42_V2_Origin_Trigger_Return(0, 0, 0);
   //waitUntilInPosition();  // 等待回零完成
   //delay(3000);
