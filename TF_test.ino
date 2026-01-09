@@ -211,8 +211,8 @@ public:
     }
   }
   bool isSecondPlaceRequested() {
-    // 假设低电平表示“请求 second place”
-    if(digitalRead(IN_SECOND_REQ) == LOW){
+    // 假设高电平表示“请求 second place”
+    if(digitalRead(IN_SECOND_REQ) == HIGH){
       digitalWrite(OUT_SECOND,HIGH);
       return true;
     }
@@ -430,16 +430,16 @@ public:
           if(id==7){digitalWrite(OUT_TRAY_1,LOW);break;}
           else{digitalWrite(OUT_TRAY_2,LOW);break;}
         }
-        else if (digitalRead(IN_TRAY_1_EJECT_REQ)==LOW && id==7){
+        else if (digitalRead(IN_TRAY_1_EJECT_REQ)==HIGH && id==7){
           state = ST1_UNSENT;
           digitalWrite(OUT_TRAY_1,LOW);
-          while(digitalRead(IN_TRAY_1_EJECT_REQ)==LOW){delay(1);}
+          while(digitalRead(IN_TRAY_1_EJECT_REQ)==HIGH){delay(1);}
           break;
         }
-        else if (digitalRead(IN_TRAY_2_EJECT_REQ)==LOW && id==8){
+        else if (digitalRead(IN_TRAY_2_EJECT_REQ)==HIGH && id==8){
           state = ST1_UNSENT;
           digitalWrite(OUT_TRAY_2,LOW);
-          while(digitalRead(IN_TRAY_2_EJECT_REQ)==LOW){delay(1);}
+          while(digitalRead(IN_TRAY_2_EJECT_REQ)==HIGH){delay(1);}
           break;
         }
         if(id==7){digitalWrite(OUT_TRAY_1,HIGH);break;}
@@ -759,7 +759,8 @@ void homing() {
 bool anyMotorInStation3() {
   for (int i = 0; i < 6; ++i) {
     if (motors[i].state == Motor::ST3_UNSENT || motors[i].state == Motor::ST3_SENT || motors[i].state == Motor::ST3_ACKED || motors[i].state == Motor::ST3_REACHED) {
-      if(motors[i].state==Motor::ST3_REACHED){digitalWrite(OUT_OK,HIGH);}
+      
+      if(motors[i].state==Motor::ST3_REACHED&&checkPlateEchoMatch()){digitalWrite(OUT_OK,HIGH);}
 
       return true;
     }
@@ -771,6 +772,12 @@ bool motorIsReadyForPlate(uint8_t id) {
   Motor &m = motors[id - 1];
   // 定义哪些状态认为“有资格成为新的 plate”
   return (m.state == Motor::ST2_REACHED);  // 例如：在工位2等待中
+}
+bool checkPlateEchoMatch() {
+  if (digitalRead(IN_PLATE_ECHO_0) != digitalRead(OUT_PLATE_0)) return false;
+  if (digitalRead(IN_PLATE_ECHO_1) != digitalRead(OUT_PLATE_1)) return false;
+  if (digitalRead(IN_PLATE_ECHO_2) != digitalRead(OUT_PLATE_2)) return false;
+  return true;
 }
 void updatePlateLogic() {
   // 如果已有电机进入工位3流程，不允许切换 plate
