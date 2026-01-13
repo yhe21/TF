@@ -656,7 +656,7 @@ void homing() {
     ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_FIRST, 1, 0);
     delay(200);
   }
-  delay(3000);
+  delay(2000);
   for (uint8_t id = 1; id <= 6; ++id) {
     trigger = digitalRead(sen_1);
     if (trigger == LOW) {
@@ -664,7 +664,7 @@ void homing() {
       Serial.print(id);
       Serial.println("start to trigger sen_1");
       ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_HOMING, 1, 0);
-      delay(2000);
+      delay(1000);
     } else {
       Serial.print("Motor:");
       Serial.print("id");
@@ -677,7 +677,7 @@ void homing() {
       Serial.print("id");
       Serial.println("trigger sen_1 OK.");
       ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_FIRST, 1, 0);
-      delay(2000);
+      delay(1000);
     } else {
       Serial.print("Motor:");
       Serial.print("id");
@@ -690,7 +690,7 @@ void homing() {
       Serial.print(id);
       Serial.println("Recovered from sen_1,start to trigger sen_2");
       ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_HOMING_END, 1, 0);
-      delay(10000);
+      delay(8000);
     } else {
       Serial.print("Motor:");
       Serial.print("id");
@@ -702,7 +702,7 @@ void homing() {
       Serial.print("id");
       Serial.println("trigger sen_2 OK.");
       ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_END, 1, 0);
-      delay(2000);
+      delay(1000);
     } else {
       Serial.print("Motor:");
       Serial.print("id");
@@ -711,7 +711,7 @@ void homing() {
     }
   }
   //trigger sen_3 for motor 7 and 8
-  delay(2000);
+  delay(1000);
   for (uint8_t id = 7; id <= 8; ++id) {
     
   trigger = digitalRead(sen_3);
@@ -720,7 +720,7 @@ void homing() {
       Serial.print(id);
       Serial.println("start to trigger sen_3");
       ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_HOMING, 1, 0);
-      delay(3000);
+      delay(1000);
     } else {
       Serial.print("Motor:");
       Serial.print("id");
@@ -733,7 +733,7 @@ void homing() {
       Serial.print("id");
       Serial.println("trigger sen_3 OK.");
       ZDT_X42_V2_Traj_Position_Control(id, 0, ACC, DECL, VEL, POS_FIRST, 1, 0);
-      delay(3000);
+      delay(1000);
     } else {
       Serial.print("Motor:");
       Serial.print("id");
