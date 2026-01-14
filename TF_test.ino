@@ -46,9 +46,9 @@ uint8_t g_rxCmd[128];
 uint8_t g_rxCount = 0;
 
 // ====================== 运动通用参数 ======================
-const uint16_t ACC = 300;
-const uint16_t DECL = 300;
-const float    VEL  = 150.0f;  // RPM（按你那套参数来）
+const uint16_t ACC = 10000;
+const uint16_t DECL = 5000;
+const float    VEL  = 1500.0f;  // RPM（按你那套参数来）
 
 // ====================== 电机与角度定义 ======================
 // Motor 9：工装/治具旋转
@@ -58,10 +58,10 @@ constexpr uint8_t MOTOR_FIXTURE = 9;
 constexpr uint8_t MOTOR_SHIELD  = 10;
 
 // ⭐ 下面这些全部用「度」为单位，后面如果要改机械位置，改这里就行
-const long POS_FIXTURE_OK_DEG     = 0;    // 工装 OK 位置
-const long POS_FIXTURE_STAMP_DEG  = 90;   // 冲压位置
-const long POS_FIXTURE_GLUE1_DEG  = 180;  // 胶位1
-const long POS_FIXTURE_GLUE2_DEG  = 270;  // 胶位2
+const long POS_FIXTURE_OK_DEG     = 400;    // 工装 OK 位置
+const long POS_FIXTURE_STAMP_DEG  = 2400;   // 冲压位置
+const long POS_FIXTURE_GLUE1_DEG  = 3100;  // 胶位1
+const long POS_FIXTURE_GLUE2_DEG  = 4100;  // 胶位2
 
 const long POS_SHIELD_CLOSE_DEG   = 0;    // 挡板关闭（防漏）
 const long POS_SHIELD_OPEN_DEG    = 90;   // 挡板打开（可出胶）
@@ -335,7 +335,7 @@ void homing() {
   HomingStatus status;
 
   // ---------- 阶段 0：确认当前无回零进行中 ----------
-  for (uint8_t id = MOTOR_FIXTURE; id <= MOTOR_FIXTURE; ++id) {
+  for (uint8_t id = MOTOR_FIXTURE; id <= MOTOR_SHIELD; ++id) {
     do {
       status = checkHomingStatus(id);
       delay(50);
@@ -348,10 +348,10 @@ void homing() {
 
   // ---------- 阶段 1：触发多圈碰撞回零 (o_mode = 2) ----------
   Serial.println("Homing: 触发多圈碰撞回零 (o_mode=2)");
-  ZDT_X42_V2_Origin_Trigger_Return(9, 2, 0);
+  ZDT_X42_V2_Origin_Trigger_Return(0, 2, 0);
   delay(50);
 
-  for (uint8_t id = MOTOR_FIXTURE; id <= MOTOR_FIXTURE; ++id) {
+  for (uint8_t id = MOTOR_FIXTURE; id <= MOTOR_SHIELD; ++id) {
     do {
       status = checkHomingStatus(id);
       delay(50);
@@ -376,7 +376,7 @@ void homing() {
   int limState = digitalRead(IN_LIMIT_SW);
   Serial.print("Homing: 限位开关状态(就近回零后) = ");
   Serial.println(limState == LOW ? "LOW" : "HIGH");
-  if (limState != LOW) {
+  if (limState == LOW) {
     fatalError("Homing: 完成就近回零后，限位开关不是 LOW");
   }
 
@@ -385,11 +385,11 @@ void homing() {
     fatalError("Homing: 移动到 OK 位置失败");
   }
 
-  delay(200);
+  delay(2000);
   limState = digitalRead(IN_LIMIT_SW);
   Serial.print("Homing: 限位开关状态(OK 位置) = ");
   Serial.println(limState == LOW ? "LOW" : "HIGH");
-  if (limState != HIGH) {
+  if (limState == HIGH) {
     fatalError("Homing: 在 OK 位置时，限位开关不是 HIGH");
   }
 
@@ -511,6 +511,7 @@ void setup() {
   pinMode(IN_STAMP_GLUE,   INPUT_PULLUP);   // 注意：外部应保证高=请求，低=无
   pinMode(IN_STAMP_ONLY,   INPUT_PULLUP);
   // 传感器：低电平有效
+  pinMode(IN_LIMIT_SW,   INPUT_PULLUP);
   pinMode(IN_STAMP_SENSOR, INPUT_PULLUP);
 
   // 输出：给机器人 / 电磁阀，高电平有效
@@ -530,7 +531,7 @@ void loop() {
   // 简单轮询请求信号
   bool stampGlueReq = (digitalRead(IN_STAMP_GLUE) == HIGH);  // 来自机器人，高电平有效
   bool stampOnlyReq = (digitalRead(IN_STAMP_ONLY) == HIGH);
-
+  bool purgeSwitch=(digitalRead(30)==LOW);//todo add name and wire
   if (stampGlueReq) {
     runStampAndGlueCycle();
     // 等待请求信号撤销，避免重复触发
@@ -542,10 +543,17 @@ void loop() {
     while (digitalRead(IN_STAMP_ONLY) == HIGH) {
       delay(10);
     }
-  } else {
-    if(moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_OK_DEG)) digitalWrite(OUT_FIXTURE_OK, HIGH);
+  } else if(purgeSwitch) {
+    while(digitalRead(30)==LOW){
+      if (!shieldOpen()) fatalError("glue shield not open when purge");
+      delay(100);
+    }
+    if (!shieldClose()) fatalError("glue shield not open when purge");
     
+  } else{
+    if(moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_OK_DEG)) digitalWrite(OUT_FIXTURE_OK, HIGH);
   }
+
 
   delay(10);
 }
