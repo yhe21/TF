@@ -428,19 +428,19 @@ void runStampAndGlueCycle() {
   if(digitalRead(IN_STAMP_SENSOR) == HIGH) fatalError("stamp sensor not at up location");
   if (!moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_STAMP_DEG)) fatalError("Fixture not at Stamp when stamp and glue");
   
-  // 3) 冲压：开启冲压电磁阀，等到冲压传感器（低电平有效）或超时
+  // 3) 冲压：开启冲压电磁阀，等到冲压传感器（高电平有效）或超时
   digitalWrite(OUT_STAMP_SOL, HIGH);
   {
     unsigned long t0 = millis();
-    while (digitalRead(IN_STAMP_SENSOR) == HIGH) {
+    while (digitalRead(IN_STAMP_SENSOR) == LOW) {
       delay(10);
     }
-    delay(700);t0 = millis();
+    delay(400);t0 = millis();
     digitalWrite(OUT_STAMP_SOL, LOW);
     while (digitalRead(IN_STAMP_SENSOR) == LOW &&(millis() - t0 < STAMP_MAX_TIME_MS)) {
       delay(10);
     }
-    if(millis() - t0 < STAMP_MAX_TIME_MS) fatalError("stamp sensor not recover in 2000ms from stroke");
+    if(millis() - t0 > STAMP_MAX_TIME_MS) fatalError("stamp sensor not recover in 2000ms from stroke");
   }
   
 
@@ -474,22 +474,22 @@ void runStampOnlyCycle() {
   digitalWrite(OUT_FIXTURE_OK, LOW);
 
   // 2) 去 Stamp 位置
-  if(digitalRead(IN_STAMP_SENSOR) == HIGH) fatalError("stamp sensor not at up location");
+  if(digitalRead(IN_STAMP_SENSOR) == LOW) fatalError("stamp sensor not at up location");
   if (!moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_STAMP_DEG)) fatalError("Fixture not at Stamp when stamp and glue");
   
-  // 3) 冲压：开启冲压电磁阀，等到冲压传感器（低电平有效）或超时
+  // 3) 冲压：开启冲压电磁阀，等到冲压传感器（高电平有效）或超时
   digitalWrite(OUT_STAMP_SOL, HIGH);
   {
     unsigned long t0 = millis();
     while (digitalRead(IN_STAMP_SENSOR) == HIGH) {
       delay(10);
     }
-    delay(700);t0 = millis();
+    delay(400);t0 = millis();
     digitalWrite(OUT_STAMP_SOL, LOW);
     while (digitalRead(IN_STAMP_SENSOR) == LOW &&(millis() - t0 < STAMP_MAX_TIME_MS)) {
       delay(10);
     }
-    if(millis() - t0 < STAMP_MAX_TIME_MS) fatalError("stamp sensor not recover in 2000ms from stroke");
+    if(millis() - t0 > STAMP_MAX_TIME_MS) fatalError("stamp sensor not recover in 2000ms from stroke");
   }
   // 4) 回到OK
   if (!moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_OK_DEG)) fatalError("Cannot return to OK");
@@ -526,6 +526,7 @@ void setup() {
 
   Serial.println("Arduino2 初始化完成");
   // 如需回零，可在此处调用你的 Origin_Trigger + homing 逻辑
+  homing();
 }
 
 void loop() {
