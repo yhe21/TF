@@ -72,7 +72,7 @@ constexpr int IN_STAMP_GLUE   = 44;  // Stamp + Glue 请求（高电平有效，
 constexpr int IN_STAMP_ONLY   = 45;  // 仅 Stamp 请求（高电平有效，来自机器人）
 constexpr int IN_LIMIT_SW   = 46;  // 回零limit switch
 constexpr int IN_STAMP_SENSOR = 47;  // 冲压上死点传感器（传感器，高电平有效）
-
+constexpr int IN_PURGE = 30;
 // 输出（给 T6 / 电磁阀）
 constexpr int OUT_FIXTURE_OK  = 48;  // Fixture at OK 信号
 constexpr int OUT_GLUE_SOL    = 49;  // Glue Head 电磁阀
@@ -512,6 +512,7 @@ void setup() {
   pinMode(IN_STAMP_ONLY,   INPUT_PULLUP);
   // 传感器：低电平有效
   pinMode(IN_LIMIT_SW,   INPUT_PULLUP);
+  pinMode(IN_PURGE, INPUT_PULLUP);
   pinMode(IN_STAMP_SENSOR, INPUT_PULLUP);
 
   // 输出：给机器人 / 电磁阀，高电平有效
@@ -531,7 +532,7 @@ void loop() {
   // 简单轮询请求信号
   bool stampGlueReq = (digitalRead(IN_STAMP_GLUE) == HIGH);  // 来自机器人，高电平有效
   bool stampOnlyReq = (digitalRead(IN_STAMP_ONLY) == HIGH);
-  bool purgeSwitch=(digitalRead(30)==LOW);//todo add name and wire
+  bool purgeSwitch=(digitalRead(IN_PURGE)==LOW);//todo add name and wire
   if (stampGlueReq) {
     runStampAndGlueCycle();
     // 等待请求信号撤销，避免重复触发
@@ -544,7 +545,7 @@ void loop() {
       delay(10);
     }
   } else if(purgeSwitch) {
-    while(digitalRead(30)==LOW){
+    while(digitalRead(IN_PURGE)==LOW){
       if (!shieldOpen()) fatalError("glue shield not open when purge");
       delay(100);
     }
