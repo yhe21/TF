@@ -338,7 +338,7 @@ void homing() {
   for (uint8_t id = MOTOR_FIXTURE; id <= MOTOR_SHIELD; ++id) {
     do {
       status = checkHomingStatus(id);
-      delay(50);
+      delay(300);
     } while (status == HOMING_IN_PROGRESS);
 
     if (status != HOMING_SUCCESS) {
