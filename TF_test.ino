@@ -335,7 +335,7 @@ void homing() {
   HomingStatus status;
 
   // ---------- 阶段 0：确认当前无回零进行中 ----------
-  for (uint8_t id = MOTOR_FIXTURE; id <= MOTOR_SHIELD; ++id) {
+  for (uint8_t id = MOTOR_FIXTURE; id <= MOTOR_FIXTURE; ++id) {
     do {
       status = checkHomingStatus(id);
       delay(300);
@@ -351,7 +351,7 @@ void homing() {
   ZDT_X42_V2_Origin_Trigger_Return(0, 2, 0);
   delay(50);
 
-  for (uint8_t id = MOTOR_FIXTURE; id <= MOTOR_SHIELD; ++id) {
+  for (uint8_t id = MOTOR_FIXTURE; id <= MOTOR_FIXTURE; ++id) {
     do {
       status = checkHomingStatus(id);
       delay(50);
@@ -425,7 +425,7 @@ void runStampAndGlueCycle() {
   digitalWrite(OUT_FIXTURE_OK, LOW);
 
   // 2) 去 Stamp 位置
-  if(digitalRead(IN_STAMP_SENSOR) == HIGH) fatalError("stamp sensor not at up location");
+  if(digitalRead(IN_STAMP_SENSOR) == LOW) fatalError("stamp sensor not at up location");
   if (!moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_STAMP_DEG)) fatalError("Fixture not at Stamp when stamp and glue");
   
   // 3) 冲压：开启冲压电磁阀，等到冲压传感器（高电平有效）或超时
