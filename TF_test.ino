@@ -353,7 +353,7 @@ public:
             }
             if (btnTmr >= 40) {
               digitalWrite(OUT_EJECT, HIGH);
-              while (digitalRead(IN_EJECT_REQ) == HIGH) { delay(1); }
+              while (digitalRead(IN_EJECT_REQ) == LOW) { delay(1); }
               digitalWrite(OUT_EJECT, LOW);
               digitalWrite(OUT_OK, LOW);
               state = ST1_UNSENT;
