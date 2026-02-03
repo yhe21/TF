@@ -47,8 +47,8 @@ uint8_t g_rxCount = 0;
 
 // ====================== 运动通用参数 ======================
 const uint16_t ACC = 10000;
-const uint16_t DECL = 5000;
-const float    VEL  = 1500.0f;  // RPM（按你那套参数来）
+const uint16_t DECL = 6000;
+const float    VEL  = 2000.0f;  // RPM（按你那套参数来）
 
 // ====================== 电机与角度定义 ======================
 // Motor 9：工装/治具旋转
@@ -83,7 +83,7 @@ const unsigned long ACK_TIMEOUT_MS      = 200;    // Ack 等待超时
 const unsigned long REACHED_TIMEOUT_MS  = 3000;  // 到位等待超时
 const unsigned long MOVE_RETRY_DELAY_MS = 20;     // 重发命令间隔
 
-const unsigned long GLUE_ON_TIME_MS     = 500;    // 每次出胶时间
+const unsigned long GLUE_ON_TIME_MS     = 200;    // 每次出胶时间
 const unsigned long STAMP_MAX_TIME_MS   = 2000;   // 冲压最大等待时间
 enum HomingStatus {
   HOMING_IN_PROGRESS,
@@ -202,18 +202,18 @@ bool checkAckDeg(uint8_t id, long expectedTargetDeg) {
   long diff = curDeg - expectedTargetDeg;
   if (diff < 0) diff = -diff;
 
-  Serial.print("checkAckDeg: Motor ");
-  Serial.print(id);
-  Serial.print(" 目标角度设定 = ");
-  Serial.print(curDeg);
-  Serial.print(" deg (期望 ");
-  Serial.print(expectedTargetDeg);
-  Serial.print(") 差值=");
-  Serial.println(diff);
+  //Serial.print("checkAckDeg: Motor ");
+  //Serial.print(id);
+  //Serial.print(" 目标角度设定 = ");
+  //Serial.print(curDeg);
+  //Serial.print(" deg (期望 ");
+  //Serial.print(expectedTargetDeg);
+  //Serial.print(") 差值=");
+  //Serial.println(diff);
 
   // 容差 ±1°
   if (diff <= 1) {
-    Serial.println("checkAckDeg: 设定目标位置确认 OK");
+    //Serial.println("checkAckDeg: 设定目标位置确认 OK");
     return true;
   }
 
@@ -248,17 +248,17 @@ bool checkReachedDeg(uint8_t id, long expectedTargetDeg) {
   long diff = curDeg - expectedTargetDeg;
   if (diff < 0) diff = -diff;
 
-  Serial.print("checkReachedDeg: Motor ");
-  Serial.print(id);
-  Serial.print(" 当前角度 = ");
-  Serial.print(curDeg);
-  Serial.print(" deg (期望 ");
-  Serial.print(expectedTargetDeg);
-  Serial.print(") 差值=");
-  Serial.println(diff);
+  //Serial.print("checkReachedDeg: Motor ");
+  //Serial.print(id);
+  //Serial.print(" 当前角度 = ");
+  //Serial.print(curDeg);
+  //Serial.print(" deg (期望 ");
+  //Serial.print(expectedTargetDeg);
+  //Serial.print(") 差值=");
+  //Serial.println(diff);
 
   if (diff <= 5) {
-    Serial.println("checkReachedDeg: 到位确认 OK");
+    //Serial.println("checkReachedDeg: 到位确认 OK");
     return true;
   }
 
@@ -269,11 +269,11 @@ bool checkReachedDeg(uint8_t id, long expectedTargetDeg) {
 // 发送一个目标角度（单位：度），自动循环：Ack 检查 + Reached 检查
 // Ack 超时 200ms，Reached 超时 20000ms
 bool moveMotorDeg(uint8_t id, long targetDeg) {
-  Serial.print("moveMotorDeg: Motor ");
-  Serial.print(id);
-  Serial.print(" 目标 ");
-  Serial.print(targetDeg);
-  Serial.println(" deg");
+  //Serial.print("moveMotorDeg: Motor ");
+  //Serial.print(id);
+  //Serial.print(" 目标 ");
+  //Serial.print(targetDeg);
+  //Serial.println(" deg");
 
   unsigned long start = millis();
 
@@ -310,9 +310,9 @@ bool moveMotorDeg(uint8_t id, long targetDeg) {
   unsigned long startReached = millis();
   while (millis() - startReached < REACHED_TIMEOUT_MS) {
     if (checkReachedDeg(id, targetDeg)) {
-      Serial.print("moveMotorDeg: Motor ");
-      Serial.print(id);
-      Serial.println(" Reached OK");
+      //Serial.print("moveMotorDeg: Motor ");
+      //Serial.print(id);
+      //Serial.println(" Reached OK");
       return true;
     }
     delay(MOVE_RETRY_DELAY_MS);  // MOVE_RETRY_DELAY_MSms 轮询一次实时位置
