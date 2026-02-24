@@ -367,7 +367,7 @@ public:
     
   }
   void run2(unsigned long now) {
-    uint32_t pos_end=3300;
+    uint32_t pos_end=4000;
     uint32_t pos_first=300;
     switch (state) {
       // ==================== 工位1 ====================
@@ -556,6 +556,8 @@ void setup() {
   pinMode(IN_PLATE_ECHO_2, INPUT_PULLUP);
   pinMode(IN_SECOND_REQ, INPUT_PULLUP);
   pinMode(IN_EJECT_REQ, INPUT_PULLUP);
+  pinMode(IN_TRAY_1_EJECT_REQ, INPUT_PULLUP);
+  pinMode(IN_TRAY_2_EJECT_REQ, INPUT_PULLUP);
 
   // ===== OUTPUT PINS =====
   pinMode(OUT_OK, OUTPUT);
@@ -564,6 +566,8 @@ void setup() {
   pinMode(OUT_PLATE_2, OUTPUT);
   pinMode(OUT_SECOND, OUTPUT);
   pinMode(OUT_EJECT, OUTPUT);
+  pinMode(OUT_TRAY_1, OUTPUT);
+  pinMode(OUT_TRAY_2, OUTPUT);
 
   // ===== 初始化这些输出为低电平（根据你的实际需求可修改） =====
   digitalWrite(OUT_OK, LOW);
