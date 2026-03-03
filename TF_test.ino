@@ -644,6 +644,8 @@ void setup() {
   digitalWrite(OUT_STAMP_SOL,  LOW);
 
   Serial.println("Arduino2 初始化完成");
+
+  preHoming_EnableAndCollisionHome();
   // 如需回零，可在此处调用你的 Origin_Trigger + homing 逻辑
   homing();
 }
