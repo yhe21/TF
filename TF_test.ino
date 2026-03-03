@@ -37,8 +37,8 @@ void ZDT_X42_V2_Traj_Position_Control(uint8_t addr, uint8_t dir,
 void ZDT_X42_V2_Receive_Data(uint8_t *rxCmd, uint8_t *rxCount);
 
 // 如需使能/回零等，也可以加上：
-// void ZDT_X42_V2_En_Control(uint8_t addr, bool state, uint8_t snF);
-// void ZDT_X42_V2_Origin_Trigger_Return(uint8_t addr, uint8_t o_mode, bool snF);
+void ZDT_X42_V2_En_Control(uint8_t addr, bool state, uint8_t snF);
+void ZDT_X42_V2_Origin_Trigger_Return(uint8_t addr, uint8_t o_mode, bool snF);
 // ...
 
 // ====================== 通讯缓冲区 ======================
@@ -323,6 +323,9 @@ bool moveMotorDeg(uint8_t id, long targetDeg) {
   Serial.println(" Reached 超时！");
   return false;
 }
+
+
+
 // ====================== Homing 函数 ======================
 // 流程：
 // 1) 先确认当前回零都结束且成功
@@ -496,6 +499,122 @@ void runStampOnlyCycle() {
   digitalWrite(OUT_FIXTURE_OK, HIGH);
 
   Serial.println("=== Cycle: Stamp Only 完成 ===");
+}
+
+// 读取 S_SFLAG（状态标志位），判断电机是否在线 + 返回 flag
+bool readStatusFlag(uint8_t id, uint8_t &flag) {
+  uint8_t rxCmd[16] = {0};
+  uint8_t rxCount = 0;
+
+  // 发读取状态标志命令
+  ZDT_X42_V2_Read_Sys_Params(id, S_SFLAG);  // S_SFLAG 在你的枚举里对应功能码 0x3A
+  ZDT_X42_V2_Receive_Data(rxCmd, &rxCount);
+
+  // 正常的返回帧应该是: [addr][0x3A][flag][0x6B]
+  if (rxCount != 4 || rxCmd[0] != id || rxCmd[1] != 0x3A || rxCmd[rxCount - 1] != 0x6B) {
+    // 没有收到有效帧，认为当前电机不在线
+    return false;
+  }
+
+  flag = rxCmd[2];
+  return true;
+}
+
+// 根据状态标志位判断该电机是否已使能
+bool isMotorEnabledFromFlag(uint8_t flag) {
+  // ⚠️ 下面的掩码需要根据 ZDT 手册里 S_SFLAG 的具体定义来调整
+  // 这里先假设 bit0 = 1 表示电机使能（伺服 ON），你可以改成正确的 mask
+  const uint8_t ENABLE_MASK = 0x01;
+
+  return (flag & ENABLE_MASK) != 0;
+}
+
+
+void preHoming_EnableAndCollisionHome() {
+  Serial.println("=== Pre-homing: enable all motors & run collision homing ===");
+
+  for (uint8_t id = 1; id <= 8; ++id) {
+    Serial.println();
+    Serial.print(">> Motor ");
+    Serial.print(id);
+    Serial.println(" pre-homing start");
+
+    // ========== 1. 等电机上线：循环读取 S_SFLAG ==========
+    uint8_t flag = 0;
+
+    while (true) {
+      bool ok = readStatusFlag(id, flag);
+      if (ok) {
+        Serial.print("Motor ");
+        Serial.print(id);
+        Serial.println(" is online (S_SFLAG 有返回)");
+        break;
+      }
+      Serial.print("Motor ");
+      Serial.print(id);
+      Serial.println(" offline or no response, retry after 200ms...");
+      delay(200);
+    }
+
+    // ========== 2. 发送使能，并确认已经使能 ==========
+    const int MAX_ENABLE_RETRY = 5;
+    bool enabled = false;
+
+    for (int retry = 0; retry < MAX_ENABLE_RETRY; ++retry) {
+      Serial.print("Enabling motor ");
+      Serial.print(id);
+      Serial.print(" (retry ");
+      Serial.print(retry);
+      Serial.println(")");
+
+      // 使能该电机：state = true，snF = 0（暂不做多机同步）
+      ZDT_X42_V2_En_Control(id, true, 0);
+      delay(50);  // 稍微等一下再读状态
+
+      if (!readStatusFlag(id, flag)) {
+        Serial.println("readStatusFlag after En_Control failed, will retry enable...");
+        delay(100);
+        continue;
+      }
+
+      if (isMotorEnabledFromFlag(flag)) {
+        Serial.print("Motor ");
+        Serial.print(id);
+        Serial.println(" ENABLED OK (状态标志已变为使能)");
+        enabled = true;
+        break;
+      } else {
+        Serial.print("Motor ");
+        Serial.print(id);
+        Serial.println(" still not enabled, retry...");
+        delay(100);
+      }
+    }
+
+    if (!enabled) {
+      // 如果你已经在这个 Arduino 文件里也有 fatalError，可以直接调用：
+      // fatalError("Enable motor failed", id);
+      Serial.print("FATAL: failed to enable motor ");
+      Serial.println(id);
+      while (true) {
+        // 死循环报警，你也可以闪灯
+        // digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
+        delay(500);
+      }
+    }
+
+    // ========== 3. 对该电机做一次“无限位碰撞回零”(o_mode = 2) ==========
+    Serial.print("Motor ");
+    Serial.print(id);
+    Serial.println(" start multi-turn collision homing (o_mode = 2)...");
+
+    // o_mode = 2: 多圈无限位碰撞回零; snF = 0 不做多机同步
+    ZDT_X42_V2_Origin_Trigger_Return(id, 2, 0);
+    delay(50);
+
+  }
+
+  Serial.println("=== Pre-homing done for all motors ===");
 }
 
 
