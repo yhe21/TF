@@ -63,7 +63,7 @@ const long POS_FIXTURE_STAMP_DEG  = 2400;   // 冲压位置
 const long POS_FIXTURE_GLUE1_DEG  = 3100;  // 胶位1
 const long POS_FIXTURE_GLUE2_DEG  = 4100;  // 胶位2
 
-const long POS_SHIELD_CLOSE_DEG   = 0;    // 挡板关闭（防漏）
+const long POS_SHIELD_CLOSE_DEG   = 10;    // 挡板关闭（防漏）
 const long POS_SHIELD_OPEN_DEG    = 90;   // 挡板打开（可出胶）
 
 // ====================== IO 定义 ======================
@@ -533,7 +533,7 @@ bool isMotorEnabledFromFlag(uint8_t flag) {
 void preHoming_EnableAndCollisionHome() {
   Serial.println("=== Pre-homing: enable all motors & run collision homing ===");
 
-  for (uint8_t id = 1; id <= 8; ++id) {
+  for (uint8_t id = 9; id <= 10; ++id) {
     Serial.println();
     Serial.print(">> Motor ");
     Serial.print(id);
@@ -648,6 +648,7 @@ void setup() {
   preHoming_EnableAndCollisionHome();
   // 如需回零，可在此处调用你的 Origin_Trigger + homing 逻辑
   homing();
+  shieldClose();
 }
 
 void loop() {
