@@ -45,7 +45,7 @@ void ZDT_X42_V2_Receive_Data(uint8_t *rxCmd, uint8_t *rxCount);                 
 const uint8_t MOTOR_ID = 1;
 const uint16_t ACC = 300;
 const uint16_t DECL = 300;
-const float VEL = 150.0f;  // 最大速度 (RPM)
+const float VEL = 200.0f;  // 最大速度 (RPM)
 const uint32_t POS_0 = 0;  // 0.0° → 0 (单位 0.1°)
 const uint32_t POS_FIRST = 300;
 const uint32_t POS_SECOND = 1500;
@@ -918,7 +918,7 @@ void updatePlateLogic() {
       return;
     }
 
-    // 下一个 id（循环 1~8）
+    // 下一个 id（循环 1~6）
     id = id % 6 + 1;
   }
 
