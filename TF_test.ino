@@ -475,8 +475,12 @@ public:
         if (digitalRead(IN_TRAY_2) == HIGH) {
           delay(50);
           if (digitalRead(IN_TRAY_2) == LOW) break;
-          state = ST1_UNSENT;
-          break;
+          else {
+            digitalWrite(OUT_TRAY_2, LOW);
+            while (digitalRead(IN_TRAY_2) == HIGH)){ delay(5);}
+            state = ST1_UNSENT;
+            break;
+          }
         }
         //手动eject信号:
         else if (digitalRead(btnPin) == LOW) {
