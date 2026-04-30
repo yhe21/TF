@@ -59,9 +59,9 @@ constexpr uint8_t MOTOR_SHIELD  = 10;
 
 // ⭐ 下面这些全部用「度」为单位，后面如果要改机械位置，改这里就行
 const long POS_FIXTURE_OK_DEG     = 400;    // 工装 OK 位置
-const long POS_FIXTURE_STAMP_DEG  = 2400;   // 冲压位置
-const long POS_FIXTURE_GLUE1_DEG  = 3100;  // 胶位1
-const long POS_FIXTURE_GLUE2_DEG  = 4100;  // 胶位2
+const long POS_FIXTURE_STAMP_DEG  = 2465;   // 冲压位置
+const long POS_FIXTURE_GLUE1_DEG  = 3210;  // 胶位1
+const long POS_FIXTURE_GLUE2_DEG  = 4080;  // 胶位2
 
 const long POS_SHIELD_CLOSE_DEG   = 10;    // 挡板关闭（防漏）
 const long POS_SHIELD_OPEN_DEG    = 90;   // 挡板打开（可出胶）
@@ -83,7 +83,7 @@ const unsigned long ACK_TIMEOUT_MS      = 200;    // Ack 等待超时
 const unsigned long REACHED_TIMEOUT_MS  = 3000;  // 到位等待超时
 const unsigned long MOVE_RETRY_DELAY_MS = 20;     // 重发命令间隔
 
-const unsigned long GLUE_ON_TIME_MS     = 200;    // 每次出胶时间
+const unsigned long GLUE_ON_TIME_MS     = 500;    // 每次出胶时间
 const unsigned long STAMP_MAX_TIME_MS   = 2000;   // 冲压最大等待时间
 enum HomingStatus {
   HOMING_IN_PROGRESS,
@@ -452,15 +452,14 @@ void runStampAndGlueCycle() {
   if (!moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_GLUE1_DEG)) fatalError("Fixture cannot go to glue 1");
 
   // 打开挡板，开始出胶
-  if (!shieldOpen()) fatalError("glue shield not open");
+  //if (!shieldOpen()) fatalError("glue shield not open");
   doOneGlueShot();
 
   // 5) 去 Glue2
   if (!moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_GLUE2_DEG)) fatalError("Fixture cannot go to glue 2");
   doOneGlueShot();
-
   // 6) 关闭挡板
-  if (!shieldClose()) fatalError("glue shield not closed");
+  //if (!shieldClose()) fatalError("glue shield not closed");
   // 7) 回到OK
   if (!moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_OK_DEG)) fatalError("Cannot return to OK");
   digitalWrite(OUT_FIXTURE_OK, HIGH);
@@ -533,7 +532,7 @@ bool isMotorEnabledFromFlag(uint8_t flag) {
 void preHoming_EnableAndCollisionHome() {
   Serial.println("=== Pre-homing: enable all motors & run collision homing ===");
 
-  for (uint8_t id = 9; id <= 10; ++id) {
+  for (uint8_t id = 9; id <= 9; ++id) {
     Serial.println();
     Serial.print(">> Motor ");
     Serial.print(id);
@@ -644,7 +643,9 @@ void setup() {
   digitalWrite(OUT_STAMP_SOL,  LOW);
 
   Serial.println("Arduino2 初始化完成");
-
+  while (digitalRead(IN_STAMP_SENSOR) == LOW) {
+      delay(10);
+    }
   preHoming_EnableAndCollisionHome();
   // 如需回零，可在此处调用你的 Origin_Trigger + homing 逻辑
   homing();
@@ -668,12 +669,12 @@ void loop() {
       delay(10);
     }
   } else if(purgeSwitch) {
-    while(digitalRead(IN_PURGE)==LOW){
+    /*while(digitalRead(IN_PURGE)==LOW){
       if (!shieldOpen()) fatalError("glue shield not open when purge");
       delay(100);
     }
-    if (!shieldClose()) fatalError("glue shield not open when purge");
-    
+    if (!shieldClose()) fatalError("glue shield not closed after purge");
+    */
   } else{
     if(moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_OK_DEG)) digitalWrite(OUT_FIXTURE_OK, HIGH);
   }
