@@ -233,7 +233,7 @@ public:
   }
   // ===== 主运行函数（状态机核心） =====
   void run(unsigned long now) {
-
+    unsigned long btn = millis();
     switch (state) {
       // ==================== 工位1 ====================
       case ST1_UNSENT:
@@ -260,8 +260,9 @@ public:
 
       case ST1_REACHED:
         //delay(50);
-        if (digitalRead(btnPin) == LOW) { state = ST2_UNSENT; }
-
+        while ((digitalRead(btnPin)==LOW) AND ((millis()-now)<250)){delay(5);}
+        if ((millis()-now)>200)) { state = ST2_UNSENT; }
+        //while ((digitalRead(btnPin)==LOW) AND ((millis()-now)<1000)){delay(5);}
         break;
 
       // ==================== 工位2 ====================
@@ -399,8 +400,9 @@ public:
 
       case ST1_REACHED:
         //delay(50);
-        if (digitalRead(btnPin) == LOW) { state = ST2_UNSENT; }
-
+        while ((digitalRead(btnPin)==LOW) AND ((millis()-now)<250)){delay(5);}
+        if ((millis()-now)>200)) { state = ST2_UNSENT; }
+        //while (digitalRead(btnPin)==LOW){delay(5);}
         break;
 
       // ==================== 工位2 ====================
