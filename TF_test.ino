@@ -260,9 +260,9 @@ public:
 
       case ST1_REACHED:
         //delay(50);
-        while ((digitalRead(btnPin)==LOW) AND ((millis()-now)<250)){delay(5);}
-        if ((millis()-now)>200)) { state = ST2_UNSENT; }
-        //while ((digitalRead(btnPin)==LOW) AND ((millis()-now)<1000)){delay(5);}
+        while ((digitalRead(btnPin)==LOW) && ((millis()-now)<250)){delay(5);}
+        if ((millis()-now)>200) { state = ST2_UNSENT; }
+        //while ((digitalRead(btnPin)==LOW) && ((millis()-now)<1000)){delay(5);}
         break;
 
       // ==================== 工位2 ====================
@@ -400,8 +400,8 @@ public:
 
       case ST1_REACHED:
         //delay(50);
-        while ((digitalRead(btnPin)==LOW) AND ((millis()-now)<250)){delay(5);}
-        if ((millis()-now)>200)) { state = ST2_UNSENT; }
+        while ((digitalRead(btnPin)==LOW) && ((millis()-now)<250)){delay(5);}
+        if ((millis()-now)>200) { state = ST2_UNSENT; }
         //while (digitalRead(btnPin)==LOW){delay(5);}
         break;
 
@@ -479,7 +479,7 @@ public:
           if (digitalRead(IN_TRAY_2) == LOW) break;
           else {
             digitalWrite(OUT_TRAY_2, LOW);
-            while (digitalRead(IN_TRAY_2) == HIGH)){ delay(5);}
+            while (digitalRead(IN_TRAY_2) == HIGH){ delay(5);}
             state = ST1_UNSENT;
             break;
           }
