@@ -438,7 +438,7 @@ void runStampAndGlueCycle() {
     while (digitalRead(IN_STAMP_SENSOR) == LOW) {
       delay(10);
     }
-    delay(400);t0 = millis();
+    delay(350);t0 = millis();
     digitalWrite(OUT_STAMP_SOL, LOW);
     while (digitalRead(IN_STAMP_SENSOR) == LOW &&(millis() - t0 < STAMP_MAX_TIME_MS)) {
       delay(10);
@@ -449,11 +449,11 @@ void runStampAndGlueCycle() {
 
   // 4) 去 Glue1
   
-  if (!moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_GLUE1_DEG)) fatalError("Fixture cannot go to glue 1");
+  //if (!moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_GLUE1_DEG)) fatalError("Fixture cannot go to glue 1");
 
   // 打开挡板，开始出胶
   //if (!shieldOpen()) fatalError("glue shield not open");
-  doOneGlueShot();
+  //doOneGlueShot();
 
   // 5) 去 Glue2
   if (!moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_GLUE2_DEG)) fatalError("Fixture cannot go to glue 2");
@@ -486,7 +486,7 @@ void runStampOnlyCycle() {
     while (digitalRead(IN_STAMP_SENSOR) == HIGH) {
       delay(10);
     }
-    delay(400);t0 = millis();
+    delay(350);t0 = millis();
     digitalWrite(OUT_STAMP_SOL, LOW);
     while (digitalRead(IN_STAMP_SENSOR) == LOW &&(millis() - t0 < STAMP_MAX_TIME_MS)) {
       delay(10);
