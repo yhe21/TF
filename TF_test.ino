@@ -171,23 +171,18 @@ HomingStatus checkHomingStatus(uint8_t id) {
 }
 // ====================== 检查 Ack / Reached（0.1° 风格） ======================
 
-// 检查「目标位置」是否已正确设定 (S_TPOS / 功能码 0x33)
-// 参数 expectedTargetDeg 使用「度」
-bool checkAckDeg(uint8_t id, long expectedTargetDeg) {
+bool readMotorPositionDeg(uint8_t id, SysParams_t param, uint8_t expectedCode, long &currentDeg) {
   memset(g_rxCmd, 0, sizeof(g_rxCmd));
   g_rxCount = 0;
 
-  // 读取目标位置 (功能码 0x33)
-  ZDT_X42_V2_Read_Sys_Params(id, S_TPOS);
+  ZDT_X42_V2_Read_Sys_Params(id, param);
   ZDT_X42_V2_Receive_Data(g_rxCmd, &g_rxCount);
 
-  // 基本帧校验
-  if (g_rxCount != 8 || g_rxCmd[0] != id || g_rxCmd[1] != 0x33) {
-    Serial.println("checkAckDeg: 无效返回帧");
+  if (g_rxCount != 8 || g_rxCmd[0] != id || g_rxCmd[1] != expectedCode) {
+    Serial.println("readMotorPositionDeg: invalid frame");
     return false;
   }
 
-  // 提取符号和原始位置（驱动内部为 0.1°）
   bool negative = (g_rxCmd[2] != 0);
   uint32_t posRaw =
     ((uint32_t)g_rxCmd[3] << 24) |
@@ -195,24 +190,24 @@ bool checkAckDeg(uint8_t id, long expectedTargetDeg) {
     ((uint32_t)g_rxCmd[5] << 8)  |
     (uint32_t)g_rxCmd[6];
 
-  // 和你原来的写法保持一致：0.1° → 度
-  long curDeg = (long)(posRaw * 0.1f);
-  if (negative) curDeg = -curDeg;
+  currentDeg = (long)(posRaw * 0.1f);
+  if (negative) currentDeg = -currentDeg;
+  return true;
+}
 
-  long diff = curDeg - expectedTargetDeg;
+bool isWithinDeg(long currentDeg, long expectedTargetDeg, long toleranceDeg) {
+  long diff = currentDeg - expectedTargetDeg;
   if (diff < 0) diff = -diff;
+  return diff <= toleranceDeg;
+}
 
-  //Serial.print("checkAckDeg: Motor ");
-  //Serial.print(id);
-  //Serial.print(" 目标角度设定 = ");
-  //Serial.print(curDeg);
-  //Serial.print(" deg (期望 ");
-  //Serial.print(expectedTargetDeg);
-  //Serial.print(") 差值=");
-  //Serial.println(diff);
+// 检查「目标位置」是否已正确设定 (S_TPOS / 功能码 0x33)
+// 参数 expectedTargetDeg 使用「度」
+bool checkAckDeg(uint8_t id, long expectedTargetDeg) {
+  long curDeg = 0;
+  if (!readMotorPositionDeg(id, S_TPOS, 0x33, curDeg)) return false;
 
-  // 容差 ±1°
-  if (diff <= 1) {
+  if (isWithinDeg(curDeg, expectedTargetDeg, 1)) {
     //Serial.println("checkAckDeg: 设定目标位置确认 OK");
     return true;
   }
@@ -222,42 +217,10 @@ bool checkAckDeg(uint8_t id, long expectedTargetDeg) {
 
 // 检查「实时位置」是否到达目标 (S_CPOS / 功能码 0x36)
 bool checkReachedDeg(uint8_t id, long expectedTargetDeg) {
-  memset(g_rxCmd, 0, sizeof(g_rxCmd));
-  g_rxCount = 0;
+  long curDeg = 0;
+  if (!readMotorPositionDeg(id, S_CPOS, 0x36, curDeg)) return false;
 
-  // 读取实时位置 (功能码 0x36)
-  ZDT_X42_V2_Read_Sys_Params(id, S_CPOS);
-  ZDT_X42_V2_Receive_Data(g_rxCmd, &g_rxCount);
-
-  // 基本帧校验
-  if (g_rxCount != 8 || g_rxCmd[0] != id || g_rxCmd[1] != 0x36) {
-    Serial.println("checkReachedDeg: 无效返回帧");
-    return false;
-  }
-
-  bool negative = (g_rxCmd[2] != 0);
-  uint32_t posRaw =
-    ((uint32_t)g_rxCmd[3] << 24) |
-    ((uint32_t)g_rxCmd[4] << 16) |
-    ((uint32_t)g_rxCmd[5] << 8)  |
-    (uint32_t)g_rxCmd[6];
-
-  long curDeg = (long)(posRaw * 0.1f);  // 0.1° → 度
-  if (negative) curDeg = -curDeg;
-
-  long diff = curDeg - expectedTargetDeg;
-  if (diff < 0) diff = -diff;
-
-  //Serial.print("checkReachedDeg: Motor ");
-  //Serial.print(id);
-  //Serial.print(" 当前角度 = ");
-  //Serial.print(curDeg);
-  //Serial.print(" deg (期望 ");
-  //Serial.print(expectedTargetDeg);
-  //Serial.print(") 差值=");
-  //Serial.println(diff);
-
-  if (diff <= 5) {
+  if (isWithinDeg(curDeg, expectedTargetDeg, 5)) {
     //Serial.println("checkReachedDeg: 到位确认 OK");
     return true;
   }
@@ -415,54 +378,74 @@ void doOneGlueShot() {
   digitalWrite(OUT_GLUE_SOL, LOW);
 }
 
+void setFixtureOkOutput(bool ready) {
+  digitalWrite(OUT_FIXTURE_OK, ready ? HIGH : LOW);
+}
+
+void moveFixtureOrFail(long targetDeg, const char* errorMessage) {
+  if (!moveMotorDeg(MOTOR_FIXTURE, targetDeg)) fatalError(errorMessage);
+}
+
+void prepareFixtureForStamp(const char* stampMoveError) {
+  moveFixtureOrFail(POS_FIXTURE_OK_DEG, "Fixture not at OK");
+  setFixtureOkOutput(false);
+
+  if (digitalRead(IN_STAMP_SENSOR) == LOW) fatalError("stamp sensor not at up location");
+  moveFixtureOrFail(POS_FIXTURE_STAMP_DEG, stampMoveError);
+}
+
+void fireStampSolenoid(bool waitForSensorHighBeforeSettle) {
+  digitalWrite(OUT_STAMP_SOL, HIGH);
+
+  if (waitForSensorHighBeforeSettle) {
+    while (digitalRead(IN_STAMP_SENSOR) == LOW) delay(10);
+  } else {
+    while (digitalRead(IN_STAMP_SENSOR) == HIGH) delay(10);
+  }
+
+  delay(350);
+  unsigned long recoverStart = millis();
+  digitalWrite(OUT_STAMP_SOL, LOW);
+  while (digitalRead(IN_STAMP_SENSOR) == LOW && millis() - recoverStart < STAMP_MAX_TIME_MS) {
+    delay(10);
+  }
+  if (millis() - recoverStart > STAMP_MAX_TIME_MS) {
+    fatalError("stamp sensor not recover in 2000ms from stroke");
+  }
+}
+
+void returnFixtureToOk() {
+  moveFixtureOrFail(POS_FIXTURE_OK_DEG, "Cannot return to OK");
+  setFixtureOkOutput(true);
+}
+
+bool inputIsHigh(int pin) {
+  return digitalRead(pin) == HIGH;
+}
+
+void waitForInputLow(int pin) {
+  while (inputIsHigh(pin)) delay(10);
+}
+
 // 一次完整的「Stamp + Glue」循环（阻塞式）
 void runStampAndGlueCycle() {
   Serial.println("=== Cycle: Stamp + Glue 开始 ===");
 
-  // 确保输出初始状态
   digitalWrite(OUT_GLUE_SOL, LOW);
   digitalWrite(OUT_STAMP_SOL, LOW);
 
-  // 1) 确保治具先回到 OK
-  if (!moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_OK_DEG)) fatalError("Fixture not at OK");
-  digitalWrite(OUT_FIXTURE_OK, LOW);
+  prepareFixtureForStamp("Fixture not at Stamp when stamp and glue");
+  fireStampSolenoid(true);
 
-  // 2) 去 Stamp 位置
-  if(digitalRead(IN_STAMP_SENSOR) == LOW) fatalError("stamp sensor not at up location");
-  if (!moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_STAMP_DEG)) fatalError("Fixture not at Stamp when stamp and glue");
-  
-  // 3) 冲压：开启冲压电磁阀，等到冲压传感器（高电平有效）或超时
-  digitalWrite(OUT_STAMP_SOL, HIGH);
-  {
-    unsigned long t0 = millis();
-    while (digitalRead(IN_STAMP_SENSOR) == LOW) {
-      delay(10);
-    }
-    delay(350);t0 = millis();
-    digitalWrite(OUT_STAMP_SOL, LOW);
-    while (digitalRead(IN_STAMP_SENSOR) == LOW &&(millis() - t0 < STAMP_MAX_TIME_MS)) {
-      delay(10);
-    }
-    if(millis() - t0 > STAMP_MAX_TIME_MS) fatalError("stamp sensor not recover in 2000ms from stroke");
-  }
-  
-
-  // 4) 去 Glue1
-  
   //if (!moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_GLUE1_DEG)) fatalError("Fixture cannot go to glue 1");
-
-  // 打开挡板，开始出胶
   //if (!shieldOpen()) fatalError("glue shield not open");
   //doOneGlueShot();
 
-  // 5) 去 Glue2
-  if (!moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_GLUE2_DEG)) fatalError("Fixture cannot go to glue 2");
+  moveFixtureOrFail(POS_FIXTURE_GLUE2_DEG, "Fixture cannot go to glue 2");
   doOneGlueShot();
-  // 6) 关闭挡板
   //if (!shieldClose()) fatalError("glue shield not closed");
-  // 7) 回到OK
-  if (!moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_OK_DEG)) fatalError("Cannot return to OK");
-  digitalWrite(OUT_FIXTURE_OK, HIGH);
+
+  returnFixtureToOk();
 
   Serial.println("=== Cycle: Stamp + Glue 完成 ===");
 }
@@ -471,31 +454,9 @@ void runStampAndGlueCycle() {
 void runStampOnlyCycle() {
   Serial.println("=== Cycle: Stamp Only 开始 ===");
 
-  // 1) 确保治具先回到 OK
-  if (!moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_OK_DEG)) fatalError("Fixture not at OK");
-  digitalWrite(OUT_FIXTURE_OK, LOW);
-
-  // 2) 去 Stamp 位置
-  if(digitalRead(IN_STAMP_SENSOR) == LOW) fatalError("stamp sensor not at up location");
-  if (!moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_STAMP_DEG)) fatalError("Fixture not at Stamp when stamp and glue");
-  
-  // 3) 冲压：开启冲压电磁阀，等到冲压传感器（高电平有效）或超时
-  digitalWrite(OUT_STAMP_SOL, HIGH);
-  {
-    unsigned long t0 = millis();
-    while (digitalRead(IN_STAMP_SENSOR) == HIGH) {
-      delay(10);
-    }
-    delay(350);t0 = millis();
-    digitalWrite(OUT_STAMP_SOL, LOW);
-    while (digitalRead(IN_STAMP_SENSOR) == LOW &&(millis() - t0 < STAMP_MAX_TIME_MS)) {
-      delay(10);
-    }
-    if(millis() - t0 > STAMP_MAX_TIME_MS) fatalError("stamp sensor not recover in 2000ms from stroke");
-  }
-  // 4) 回到OK
-  if (!moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_OK_DEG)) fatalError("Cannot return to OK");
-  digitalWrite(OUT_FIXTURE_OK, HIGH);
+  prepareFixtureForStamp("Fixture not at Stamp when stamp and glue");
+  fireStampSolenoid(false);
+  returnFixtureToOk();
 
   Serial.println("=== Cycle: Stamp Only 完成 ===");
 }
@@ -532,7 +493,7 @@ bool isMotorEnabledFromFlag(uint8_t flag) {
 void preHoming_EnableAndCollisionHome() {
   Serial.println("=== Pre-homing: enable all motors & run collision homing ===");
 
-  for (uint8_t id = 9; id <= 9; ++id) {
+  for (uint8_t id = MOTOR_FIXTURE; id <= MOTOR_FIXTURE; ++id) {
     Serial.println();
     Serial.print(">> Motor ");
     Serial.print(id);
@@ -625,22 +586,14 @@ void setup() {
 
   delay(1000);
 
-  // 输入：机器人请求信号，高电平有效
-  pinMode(IN_STAMP_GLUE,   INPUT_PULLUP);   // 注意：外部应保证高=请求，低=无
-  pinMode(IN_STAMP_ONLY,   INPUT_PULLUP);
-  // 传感器：低电平有效
-  pinMode(IN_LIMIT_SW,   INPUT_PULLUP);
-  pinMode(IN_PURGE, INPUT_PULLUP);
-  pinMode(IN_STAMP_SENSOR, INPUT_PULLUP);
+  const int inputPins[] = { IN_STAMP_GLUE, IN_STAMP_ONLY, IN_LIMIT_SW, IN_PURGE, IN_STAMP_SENSOR };
+  for (int pin : inputPins) pinMode(pin, INPUT_PULLUP);
 
-  // 输出：给机器人 / 电磁阀，高电平有效
-  pinMode(OUT_FIXTURE_OK, OUTPUT);
-  pinMode(OUT_GLUE_SOL,   OUTPUT);
-  pinMode(OUT_STAMP_SOL,  OUTPUT);
-
-  digitalWrite(OUT_FIXTURE_OK, LOW);
-  digitalWrite(OUT_GLUE_SOL,   LOW);
-  digitalWrite(OUT_STAMP_SOL,  LOW);
+  const int outputPins[] = { OUT_FIXTURE_OK, OUT_GLUE_SOL, OUT_STAMP_SOL };
+  for (int pin : outputPins) {
+    pinMode(pin, OUTPUT);
+    digitalWrite(pin, LOW);
+  }
 
   Serial.println("Arduino2 初始化完成");
   while (digitalRead(IN_STAMP_SENSOR) == LOW) {
@@ -654,29 +607,24 @@ void setup() {
 
 void loop() {
   // 简单轮询请求信号
-  bool stampGlueReq = (digitalRead(IN_STAMP_GLUE) == HIGH);  // 来自机器人，高电平有效
-  bool stampOnlyReq = (digitalRead(IN_STAMP_ONLY) == HIGH);
-  bool purgeSwitch=(digitalRead(IN_PURGE)==LOW);//todo add name and wire
+  bool stampGlueReq = inputIsHigh(IN_STAMP_GLUE);  // 来自机器人，高电平有效
+  bool stampOnlyReq = inputIsHigh(IN_STAMP_ONLY);
+  bool purgeSwitch = digitalRead(IN_PURGE) == LOW;
   if (stampGlueReq) {
     runStampAndGlueCycle();
-    // 等待请求信号撤销，避免重复触发
-    while (digitalRead(IN_STAMP_GLUE) == HIGH) {
-      delay(10);
-    }
+    waitForInputLow(IN_STAMP_GLUE);
   } else if (stampOnlyReq) {
     runStampOnlyCycle();
-    while (digitalRead(IN_STAMP_ONLY) == HIGH) {
-      delay(10);
-    }
-  } else if(purgeSwitch) {
+    waitForInputLow(IN_STAMP_ONLY);
+  } else if (purgeSwitch) {
     /*while(digitalRead(IN_PURGE)==LOW){
       if (!shieldOpen()) fatalError("glue shield not open when purge");
       delay(100);
     }
     if (!shieldClose()) fatalError("glue shield not closed after purge");
     */
-  } else{
-    if(moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_OK_DEG)) digitalWrite(OUT_FIXTURE_OK, HIGH);
+  } else {
+    if (moveMotorDeg(MOTOR_FIXTURE, POS_FIXTURE_OK_DEG)) setFixtureOkOutput(true);
   }
 
 
