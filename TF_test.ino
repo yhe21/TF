@@ -330,7 +330,7 @@ bool moveMotorDeg(uint8_t id, long targetDeg) {
 // 流程：
 // 1) 先确认当前回零都结束且成功
 // 2) 触发一次多圈碰撞回零 (o_mode = 2)，等待结束并确认成功
-// 3) 再触发一次单圈就近回零 (o_mode = 0)，等待结束并确认成功
+// 3) 再触发一次单圈就近回零 (o_mode = 0)，等待结束并确认成功//取消就近回零
 // 4) 此时 limit switch (D46) 应该为 LOW
 // 5) 将治具电机转到 OK 位置，检查 D46 应为 HIGH
 void homing() {
@@ -366,8 +366,9 @@ void homing() {
   }
 
   // ---------- 阶段 2：触发单圈就近回零 (o_mode = 0) ----------
-  Serial.println("Homing: 触发单圈就近回零 (o_mode=0)");
-  ZDT_X42_V2_Origin_Trigger_Return(0, 0, 0);
+  //取消
+  //Serial.println("Homing: 触发单圈就近回零 (o_mode=0)");
+  //ZDT_X42_V2_Origin_Trigger_Return(0, 0, 0);
   delay(1000);
 
 
