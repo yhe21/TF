@@ -317,7 +317,7 @@ public:
         if (checkAck(id, st3Target)) {
           state = ST3_ACKED;
         } else {
-          state = ST2_UNSENT;
+          state = ST3_UNSENT;
         }
 
         break;
