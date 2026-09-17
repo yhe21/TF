@@ -117,13 +117,19 @@ The program performs homing for all tray motors during startup. It checks the ho
 The homing process includes:
 
 - Checking current homing status
-- Triggering collision homing or closest single-turn homing
-- Waiting for homing completion
+- Completing two collision-homing passes (the first starts during pre-homing)
+- Moving each motor to its own absolute offset in `HOMING_ZERO_OFFSETS_DEG`
+- Querying target position, then confirming current position and the reached flag for three consecutive samples
+- Clearing the current angle only after both checks pass, then verifying zero by position queries
 - Moving motors to verification positions
 - Checking limit switch states
 - Moving motors to their final starting positions
 
 If any motor fails homing or a limit switch does not respond as expected, the program stops for safety.
+
+`HOMING_ZERO_OFFSETS_DEG[0..7]` maps to motor addresses 1..8. The configured offsets are `{71.5, 73.5, 71.3, 56.1, 42.7, 44.2, 38.2, 50.0}` degrees. Values retain fractional degrees; the existing movement function handles the internal conversion to tenths of a degree. Signed offsets use the corresponding direction bit. Startup blocks before sending homing commands if any entry is set to `HOMING_OFFSET_UNSET`; zero is a valid configured offset. Calibration target readback must match to the protocol's 0.1-degree resolution (comparison tolerance 0.05 degrees). Arrival keeps the existing 5-degree tolerance plus three consecutive reached-status checks; zero readback uses a 1-degree tolerance.
+
+Single-turn homing is no longer used. Existing sensor verification and startup positioning run after all eight offsets have been applied and zeroed. `Response=None` remains supported: confirmation uses individual parameter queries, not automatic command replies. Offset movement/verification timeouts prevent clearing on a failed move and request a stop before halting startup.
 
 ---
 

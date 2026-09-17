@@ -41,6 +41,7 @@ void ZDT_X42_V2_Origin_Modify_Params(uint8_t addr, bool svF, uint8_t o_mode, uin
 void ZDT_X42_V2_Origin_Trigger_Return(uint8_t addr, uint8_t o_mode, bool snF);                                                                                                           // 发送命令触发回零
 void ZDT_X42_V2_Origin_Interrupt(uint8_t addr);                                                                                                                                          // 强制中断并退出回零
 void ZDT_X42_V2_Receive_Data(uint8_t *rxCmd, uint8_t *rxCount);                                                                                                                          // 返回数据接收函数
+bool readStatusFlag(uint8_t id, uint8_t &flag);
 // ======== 测试参数 ========
 const uint8_t MOTOR_ID = 1;
 const uint16_t ACC = 300;
@@ -54,6 +55,16 @@ const uint32_t POS_HOMING = 78;
 const uint32_t POS_HOMING_END = 6800;
 const uint32_t POS_END = 6600;
 const uint32_t POS_MID = 3800;
+
+// 电机 1-8：碰撞回零后，真正零点的绝对角度（度）。填实测值，不要乘 10。
+const float HOMING_OFFSET_UNSET = -2147483648.0f;
+const float HOMING_ZERO_OFFSETS_DEG[8] = {
+  71.5f, 73.5f, 71.3f, 56.1f, 42.7f, 44.2f, 38.2f, 50.0f
+};
+const unsigned long HOMING_TIMEOUT_MS = 60000;
+const unsigned long HOMING_ACK_TIMEOUT_MS = 3000;
+const unsigned long HOMING_MOVE_TIMEOUT_MS = 30000;
+const unsigned long HOMING_ZERO_TIMEOUT_MS = 3000;
 
 // ===== Button Pins =====
 constexpr int BTN_1 = 2;
@@ -507,6 +518,66 @@ public:
     
   }
 
+  bool calibrateZeroPosition(float targetDeg) {
+    Serial.print("Calibrating motor ");
+    Serial.print(id);
+    Serial.print(" at offset (deg): ");
+    Serial.println(targetDeg);
+    ZDT_X42_V2_Traj_Position_Control(id, targetDeg < 0 ? 1 : 0,
+                                    ACC, DECL, VEL, targetDeg, 1, 0);
+    delay(50);
+
+    // Response=None：主动读取目标位置，确认本次绝对定位目标。
+    unsigned long start = millis();
+    bool targetConfirmed = false;
+    while (millis() - start < HOMING_ACK_TIMEOUT_MS) {
+      if (checkAck(id, targetDeg, 0.05f)) {
+        targetConfirmed = true;
+        break;
+      }
+      delay(50);
+    }
+    if (!targetConfirmed) {
+      Serial.println("Calibration target confirmation timeout");
+      return false;
+    }
+
+    // 连续三次满足位置容差及到位标志后，才允许清零。
+    start = millis();
+    uint8_t settled = 0;
+    while (millis() - start < HOMING_MOVE_TIMEOUT_MS) {
+      bool positionReached = checkReached(id, targetDeg);
+      uint8_t flag = 0;
+      bool validStatus = readStatusFlag(id, flag);
+      if (validStatus && (!(flag & 0x01) || (flag & 0x0C))) {
+        Serial.println("Calibration motor disabled or stalled");
+        return false;
+      }
+      settled = positionReached && validStatus && (flag & 0x02) ? settled + 1 : 0;
+      if (settled >= 3) break;
+      delay(50);
+    }
+    if (settled < 3) {
+      Serial.println("Calibration arrival confirmation timeout");
+      return false;
+    }
+
+    ZDT_X42_V2_Reset_CurPos_To_Zero(id);
+    delay(50);
+    start = millis();
+    settled = 0;
+    while (millis() - start < HOMING_ZERO_TIMEOUT_MS) {
+      settled = checkReached(id, 0, 1) ? settled + 1 : 0;
+      if (settled >= 3) {
+        Serial.println("Calibration zero confirmed");
+        return true;
+      }
+      delay(50);
+    }
+    Serial.println("Calibration zero readback timeout");
+    return false;
+  }
+
 private:
   uint32_t st3Target = POS_FIRST;
   // ===== 工具函数 =====
@@ -525,7 +596,7 @@ private:
     Serial.println(station);
   }
 
-  bool checkAck(uint8_t id, long expectedTarget01deg) {
+  bool checkAck(uint8_t id, float expectedTargetDeg, float toleranceDeg = 5.0f) {
     memset(rxCmd, 0, sizeof(rxCmd));
     rxCount = 0;
 
@@ -534,7 +605,7 @@ private:
     ZDT_X42_V2_Receive_Data(rxCmd, &rxCount);
 
     // 校验基本字段
-    if (rxCount != 8 || rxCmd[0] != id || rxCmd[1] != 0x33) {
+    if (rxCount != 8 || rxCmd[0] != id || rxCmd[1] != 0x33 || rxCmd[7] != 0x6B) {
       Serial.println(" 无效返回帧");
       return false;
     }
@@ -542,7 +613,7 @@ private:
     // 提取符号和位置
     bool negative = rxCmd[2];
     uint32_t pos = ((uint32_t)rxCmd[3] << 24) | ((uint32_t)rxCmd[4] << 16) | ((uint32_t)rxCmd[5] << 8) | (uint32_t)rxCmd[6];
-    long cpos = (long)(pos * 0.1f);
+    float cpos = pos * 0.1f;
     if (negative) cpos = -cpos;
 
     Serial.print("Motor ");
@@ -550,8 +621,8 @@ private:
     Serial.print(" 设定目标角度: ");
     Serial.println(cpos);
 
-    // 判断是否设定目标（允许±5）
-    if (abs(cpos - expectedTarget01deg) <= 5) {
+    // 默认允许 ±5 度；校准时要求匹配到协议的 0.1 度精度。
+    if (ABS(cpos - expectedTargetDeg) <= toleranceDeg) {
       Serial.println("设定目标位置确认");
       return true;
     }
@@ -559,7 +630,7 @@ private:
     return false;
   }
 
-  bool checkReached(uint8_t id, long expectedTarget01deg) {
+  bool checkReached(uint8_t id, float expectedTargetDeg, float toleranceDeg = 5.0f) {
     memset(rxCmd, 0, sizeof(rxCmd));
     rxCount = 0;
 
@@ -568,7 +639,7 @@ private:
     ZDT_X42_V2_Receive_Data(rxCmd, &rxCount);
 
     // 校验基本字段
-    if (rxCount != 8 || rxCmd[0] != id || rxCmd[1] != 0x36) {
+    if (rxCount != 8 || rxCmd[0] != id || rxCmd[1] != 0x36 || rxCmd[7] != 0x6B) {
       Serial.println(" 无效返回帧");
       return false;
     }
@@ -576,7 +647,7 @@ private:
     // 提取符号和位置
     bool negative = rxCmd[2];
     uint32_t pos = ((uint32_t)rxCmd[3] << 24) | ((uint32_t)rxCmd[4] << 16) | ((uint32_t)rxCmd[5] << 8) | (uint32_t)rxCmd[6];
-    long cpos = (long)(pos * 0.1f);
+    float cpos = pos * 0.1f;
     if (negative) cpos = -cpos;
 
     Serial.print("Motor ");
@@ -584,8 +655,8 @@ private:
     Serial.print(" 当前角度: ");
     Serial.println(cpos);
 
-    // 判断是否到达目标（允许±5）
-    if (abs(cpos - expectedTarget01deg) <= 5) {
+    // 判断是否到达目标，保留小数角度（默认允许 ±5 度）。
+    if (ABS(cpos - expectedTargetDeg) <= toleranceDeg) {
       Serial.println(" 到位确认：当前位置与目标接近");
       return true;
     }
@@ -716,6 +787,51 @@ void preHoming_EnableAndCollisionHome() {
 }
 
 
+void haltHoming(uint8_t id, const char *reason) {
+  Serial.print("Homing stopped, motor ");
+  Serial.print(id);
+  Serial.print(": ");
+  Serial.println(reason);
+  digitalWrite(OUT_OK, LOW);
+  digitalWrite(OUT_TRAY_2, LOW);
+  // 回零和普通运动使用不同停止指令；通信异常时仅能尽力发送。
+  for (uint8_t motor = 1; motor <= 8; ++motor) {
+    ZDT_X42_V2_Origin_Interrupt(motor);
+    Serial1.flush();
+    delay(30);
+    ZDT_X42_V2_Stop_Now(motor, 0);
+    Serial1.flush();
+    delay(30);
+  }
+  while (true) delay(1000);
+}
+
+void validateHomingOffsets() {
+  for (uint8_t id = 1; id <= 8; ++id) {
+    if (HOMING_ZERO_OFFSETS_DEG[id - 1] == HOMING_OFFSET_UNSET) {
+      Serial.print("Set HOMING_ZERO_OFFSETS_DEG for motor ");
+      Serial.println(id);
+      // 配置未填齐时，在第一次回零动作之前停住。
+      while (true) delay(1000);
+    }
+  }
+}
+
+void waitForCollisionHoming() {
+  for (uint8_t id = 1; id <= 8; ++id) {
+    unsigned long start = millis();
+    Motor::HomingStatus status;
+    do {
+      status = motors[id - 1].checkHomingStatus();
+      if (status == Motor::HOMING_FAILED || status == Motor::HOMING_INVALID) {
+        haltHoming(id, "Collision homing failed or invalid reply");
+      }
+      if (millis() - start >= HOMING_TIMEOUT_MS) haltHoming(id, "Collision homing timeout");
+      delay(50);
+    } while (status == Motor::HOMING_IN_PROGRESS);
+  }
+}
+
 void setup() {
 
 
@@ -764,12 +880,7 @@ void setup() {
   pinMode(BTN_6, INPUT_PULLUP);
   pinMode(BTN_7, INPUT_PULLUP);
   pinMode(BTN_8, INPUT_PULLUP);
-  // 执行一次就近单圈回零（o_mode=2 单圈就近回零）
-  //
-  //ZDT_X42_V2_Origin_Trigger_Return(0, 0, 0);
-  //waitUntilInPosition();  // 等待回零完成
-  //delay(3000);
-  //ZDT_X42_V2_Traj_Position_Control(1, 0, ACC, DECL, VEL, 500, 1, 0);
+  validateHomingOffsets();
   preHoming_EnableAndCollisionHome();
   homing();
   delay(10);
@@ -792,42 +903,19 @@ void loop() {
 
 }
 void homing() {
-  Motor::HomingStatus status;
-  for (uint8_t id = 1; id <= 8; ++id) {
-
-    // 轮询直到回零结束（不再是“正在回零”）
-    do {
-      status = motors[id - 1].checkHomingStatus();
-      delay(50);  // 稍微等一下，避免总线太频繁
-    } while (status == Motor::HomingStatus::HOMING_IN_PROGRESS);
-
-    // 一旦不是成功，就报错退出
-    if (status != Motor::HomingStatus::HOMING_SUCCESS) {
-      Serial.print("Homing failed on motor ");
-      Serial.println(id);
-      while (1) {}
-    }
-  }
+  validateHomingOffsets();
+  // 第一次碰撞回零已由 preHoming_EnableAndCollisionHome() 触发。
+  waitForCollisionHoming();
   ZDT_X42_V2_Origin_Trigger_Return(0, 2, 0);
   delay(50);
+  waitForCollisionHoming();
+
   for (uint8_t id = 1; id <= 8; ++id) {
-
-    // 轮询直到回零结束（不再是“正在回零”）
-    do {
-      status = motors[id - 1].checkHomingStatus();
-      delay(50);  // 稍微等一下，避免总线太频繁
-    } while (status == Motor::HomingStatus::HOMING_IN_PROGRESS);
-
-    // 一旦不是成功，就报错退出
-    if (status != Motor::HomingStatus::HOMING_SUCCESS) {
-      Serial.print("Homing failed on motor ");
-      Serial.println(id);
-      while (1) {}
+    if (!motors[id - 1].calibrateZeroPosition(HOMING_ZERO_OFFSETS_DEG[id - 1])) {
+      haltHoming(id, "Offset calibration failed; normal operation blocked");
     }
   }
 
-  ZDT_X42_V2_Origin_Trigger_Return(0, 0, 0);
-  delay(2000);
   int trigger, sen_1, sen_2,sen_3;
   sen_1 = SEN_1;
   sen_2 = SEN_2;
