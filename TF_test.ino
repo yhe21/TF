@@ -531,7 +531,7 @@ public:
     unsigned long start = millis();
     bool targetConfirmed = false;
     while (millis() - start < HOMING_ACK_TIMEOUT_MS) {
-      if (checkAck(id, targetDeg, 0.05f)) {
+      if (checkAck(id, targetDeg, 0.5f)) {
         targetConfirmed = true;
         break;
       }
